@@ -88,6 +88,7 @@ const DEFAULT_BEHAVIOR_SETTINGS = {
   behavior: {
     autoPlayOnStartup: false,
     fetchMetadataOnStartup: true,
+    milonga: false
   },
 };
 

@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { amethyst } from "@/amethyst.js";
 import NavigationButton from "@/components/NavigationButton.vue";
+import { computed } from "vue";
+
+const isMilongaVisible = computed(() => 
+  amethyst.state.settings.behavior.milonga
+);
 </script>
 
 <template>
@@ -18,6 +23,12 @@ import NavigationButton from "@/components/NavigationButton.vue";
     <navigation-button
       icon="ic:twotone-favorite"
       route-name="favorites"
+    />
+
+    <navigation-button
+      v-if="isMilongaVisible"
+      icon="mdi:dance-ballroom"  
+      route-name="milonga"
     />
 
     <navigation-button

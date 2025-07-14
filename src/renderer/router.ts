@@ -9,6 +9,7 @@ const routes: RouteRecordRaw[] = [
   { path: "/node-editor", name: "node-editor", component: () => import("@/views/NodeEditorView.vue") },
   { path: "/queue", name: "queue", component: () => import("@/views/QueueView.vue") },
   { path: "/favorites", name: "favorites", component: () => import("@/views/FavoritesView.vue") },
+  { path: "/milonga", name: "milonga", component: () => import("@/views/MilongaView.vue") },
   { path: "/discovery", name: "discovery", component: () => import("@/views/DiscoveryView.vue") },
   { path: "/audio-monitor", name: "audio-monitor", component: () => import("@/views/AudioMonitorView.vue") },
   { path: "/settings", name: "settings", component: () => import("@/views/Settings/SettingsView.vue"),

@@ -302,6 +302,7 @@ export class Amethyst extends AmethystBackend {
   public VERSION = APP_VERSION;
   // @ts-ignore
   public IS_DEV = import.meta.env.DEV;
+  public IS_MILONGA: boolean = true;
   public APPDATA_PATH: string | undefined;
   public isLoading = ref(false);
   public state: State = new State(this);

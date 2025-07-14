@@ -25,6 +25,16 @@ const { behavior } = amethyst.state.settings;
       v-model="behavior.autoPlayOnStartup"
     />
   </settings-setting>
+
+  <settings-setting
+    icon="mdi:dance-ballroom"
+    :description="$t('settings.milonga.description')"
+    :title="$t('settings.milonga.title')"
+  >
+    <toggle-switch
+      v-model="behavior.milonga"
+    />
+  </settings-setting>
 </template>
 
 <style scoped lang="postcss">
