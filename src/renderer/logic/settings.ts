@@ -218,6 +218,35 @@ const DEFAULT_COLUMN_SETTINGS = {
   },
 };
 
+const DEFAULT_TRACK_SELECTOR_SETTINGS = {
+  trackSelector: {
+    columns: {
+      cover: true,
+      diskNumber: false,
+      trackNumber: false,
+      filename: true,
+      title: true,
+      artist: true,
+      location: true,
+      album: true,
+      genre: false,
+      barcode: false,
+      year: false,
+      label: false,
+      isrc: false,
+      copyright: false,
+      bpm: true,
+      duration: true,
+      container: false,
+      favorite: true,
+      sampleRate: false,
+      bitsPerSample: false,
+      bitrate: false,
+      size: false
+    }
+  },
+};
+
 const DEFAULT_SETTINGS = {
   ...DEFAULT_APPEARANCE_SETTINGS,
   ...DEFAULT_PERFORMANCE_SETTINGS,
@@ -229,6 +258,7 @@ const DEFAULT_SETTINGS = {
   ...DEFAULT_KEYBIND_SETTINGS,
   ...DEFAULT_APPLICATION_SETTINGS,
   ...DEFAULT_COLUMN_SETTINGS,
+  ...DEFAULT_TRACK_SELECTOR_SETTINGS,
 };
 
 export const createDefaultSettings = (platform: AmethystPlatforms): typeof DEFAULT_SETTINGS => {
@@ -264,6 +294,30 @@ export const createDefaultSettings = (platform: AmethystPlatforms): typeof DEFAU
       container: false,
       favorite: false,
       size: false,
+    };
+    defaultSettings.trackSelector.columns = {
+        cover: true,
+        title: true,
+        artist: true,
+        bpm: true,
+        duration: true,
+        favorite: false,
+        diskNumber: false,
+        trackNumber: false,
+        filename: true,
+        location: false,
+        album: true,
+        genre: false,
+        barcode: false,
+        year: true,
+        label: false,
+        isrc: false,
+        copyright: false,
+        container: false,
+        sampleRate: false,
+        bitsPerSample: false,
+        bitrate: false,
+        size: false
     };
   }
   return defaultSettings;

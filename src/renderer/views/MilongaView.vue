@@ -1,10 +1,20 @@
 <script setup lang="ts">
+import { useLocalStorage } from "@vueuse/core";
 import { onMounted } from "vue";
 
 import { amethyst } from "@/amethyst.js";
 import BigButton from "@/components/BigButton.vue";
 import DiscoveryFeed from "@/components/DiscoveryFeed.vue";
 import RouteHeader from "@/components/v2/RouteHeader.vue";
+
+
+// By Dima
+import TrackSelector from "@/components/TrackSelector.vue";
+import SearchInput from "@/components/v2/SearchInput.vue";
+//import type { Track } from "@/logic/track";
+const filterText = useLocalStorage("trackSelectorFilterText", "");
+
+
 onMounted(() => {
   amethyst.analytics.getDiscoveryTracks();
 });
@@ -50,23 +60,28 @@ onMounted(() => {
         @click="$router.push({ name: 'settings' })"
       />
     </div>
+
     <div class="flex flex-col overflow-y-auto gap-2 h-full pb-56">
-      <discovery-feed
-        :title="$t('discovery.for_you.title')"
-        :subtitle="$t('discovery.for_you.description')"
-        :tracks="amethyst.analytics.tracksBasedOnGenres.value"
-      />
-      <discovery-feed
-        v-if="amethyst.analytics.tracksBasedOnFavorites.value.size > 0"
-        :title="$t('discovery.favorites.title')"
-        :subtitle="$t('discovery.favorites.description')"
-        :tracks="amethyst.analytics.tracksBasedOnFavorites.value"
-      />
       <discovery-feed
         :title="$t('discovery.random.title')"
         :subtitle="$t('discovery.random.description')"
         :tracks="amethyst.analytics.tracksBasedOnRandom.value"
       />
+
+      <route-header :title="$t('route.milonga')">
+        <search-input v-model="filterText" />
+      </route-header>
+      <track-selector />
+    </div>
+
+    <div
+      class="py-2 pl-4 pr-2 flex flex-col overflow-y-auto gap-2 h-full pb-56"
+      :class="[amethyst.getCurrentPlatform() == 'mobile' ? 'px-2' : 'px-4']"
+    >
+      <route-header :title="$t('route.milonga')">
+        <search-input v-model="filterText" />
+      </route-header>
+      <track-selector />
     </div>
   </div>
 </template>
