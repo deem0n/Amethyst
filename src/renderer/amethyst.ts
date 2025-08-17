@@ -1,6 +1,7 @@
 import { Capacitor } from "@capacitor/core";
 import { StatusBar } from "@capacitor/status-bar";
 import { NavigationBar } from "@hugotomazi/capacitor-navigation-bar";
+import { PromisePool } from "@supercharge/promise-pool";
 import messages from "@intlify/unplugin-vue-i18n/messages";
 import { ALLOWED_AUDIO_EXTENSIONS } from "@shared/constants.js";
 import { useLocalStorage } from "@vueuse/core";
@@ -15,13 +16,14 @@ import { flattenArray } from "@/logic/math.js";
 import { MediaSourceManager } from "@/logic/mediaSources.js";
 import { Player } from "@/logic/player.js";
 import { Shortcuts } from "@/logic/shortcuts.js";
-import type { Track } from "@/logic/track.js";
+import { Track } from "@/logic/track.js";
 import { MediaSession } from "@/modules/mediaSession.js";
 import { State } from "@/state.js";
 
 import { registerCommand } from "./components/CommandPalette/registry.js";
 import { getThemeColorHex } from "./logic/color.js";
 import { router } from "./router.js";
+import { registerConsoleShortcuts } from "vitest/node";
 
 export const i18n = createI18n({
   fallbackLocale: "en-US", // set fallback locale
@@ -302,7 +304,6 @@ export class Amethyst extends AmethystBackend {
   public VERSION = APP_VERSION;
   // @ts-ignore
   public IS_DEV = import.meta.env.DEV;
-  public IS_MILONGA: boolean = true;
   public APPDATA_PATH: string | undefined;
   public isLoading = ref(false);
   public state: State = new State(this);
@@ -359,6 +360,11 @@ export class Amethyst extends AmethystBackend {
         await this.player.queue.fetchAsyncData();
         console.log("fetching data finished, refreshing discovery");
         this.analytics.getDiscoveryTracks();
+      }, 1000);
+
+      this.state.settings.behavior.milonga && setTimeout(async () => {
+        await this.refreshMilongaCandidateTracks()
+        console.log("Finished reading Milonga tracks.");
       }, 1000);
     }
 
@@ -735,6 +741,70 @@ export class Amethyst extends AmethystBackend {
     }
     (e.target as HTMLDivElement).classList.add("dragging");
   };
+
+    /**
+     * Fetches all async data for each track concurrently
+     */
+  async fetchAsyncDataForMilongaCandidateTracks(force?: boolean) {
+      //const tracks = force ? this.getList() : this.getList().filter((track) => !track.isLoaded);
+      const tracks = this.state.milongaCandidateTracks
+      const pool = await PromisePool
+        .for(tracks)
+        .withConcurrency(this.state.settings.performance.processingConcurrency)
+        .process(async (track) => {
+          await track.fetchAsyncData(force);
+        });
+  
+      return pool;
+    }
+
+  public async loadMilongaCandidateTracks(sourceUuid: string = "All") {
+    // Сохраняем текущий источник
+    this.state.currentMilongaCandidateTracksSource = sourceUuid;
+    
+    // Очищаем текущие треки
+    this.state.milongaCandidateTracks = [];
+    try {
+      if (sourceUuid !== "All") {
+        // Загрузка для конкретного источника
+        const source = this.mediaSourceManager.mediaSources.value.find(
+          s => s.uuid === sourceUuid
+        );
+        
+        if (source) {
+          const audioFiles = await this.readFilesFromPath(source.path);
+          this.state.milongaCandidateTracks = audioFiles.map(path => {
+            const track = new Track(this, path);
+            track.sourceUuid = sourceUuid;
+            return track;
+          });
+        }
+      } else {
+        // Загрузка всех источников
+        for (const source of this.mediaSourceManager.mediaSources.value) {
+          const audioFiles = await this.readFilesFromPath(source.path);
+          const tracks = audioFiles.map(path => {
+            const track = new Track(this, path);
+            track.sourceUuid = source.uuid;
+            return track;
+          });
+          this.state.milongaCandidateTracks.push(...tracks);
+        }
+      }
+      // Форсируем обновление Vue реактивности
+      this.fetchAsyncDataForMilongaCandidateTracks()
+      this.state.milongaCandidateTracks = [...this.state.milongaCandidateTracks];
+      console.log(`MILONGA TRACKS UPDATED: ${this.state.milongaCandidateTracks}`)
+    } catch (error) {
+      console.error('Failed to load Milonga candidate tracks:', error);
+      this.state.milongaCandidateTracks = [];
+    }
+  }
+
+  public async refreshMilongaCandidateTracks() {
+    // Reload Milonga tracks for currently selected track source
+    await this.loadMilongaCandidateTracks(this.state.currentMilongaCandidateTracksSource);
+  }
 }
 
 // this is to not reinitialize the Amethyst class on hot reload

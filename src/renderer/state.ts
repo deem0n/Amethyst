@@ -9,6 +9,8 @@ import { ShaderManager } from "@/shaders/ShaderManager.js";
 
 import { Amethyst } from "./amethyst.js";
 
+import type { Track } from "@/logic/track.js";
+
 function deepMerge<T>(target: T, source: Partial<T>): T {
   if (typeof target !== "object" || typeof source !== "object" || !target || !source) {
     return source as T;
@@ -80,6 +82,9 @@ export class State extends EventEmitter<StateEvents> {
       },
     }).value,
   });
+
+  public milongaCandidateTracks: Track[] = [];
+  public currentMilongaCandidateTracksSource: string = 'All'; // FIXME DIMA: better to have it set to `all`
 
   public shaders = ref<ShaderManager>(new ShaderManager());
 

@@ -53,6 +53,7 @@ export class Track {
   public path: string;
   public coverUrl: string = "";
   public uuid: string | undefined;
+  public sourceUuid: string | undefined; // For Milonga View
 
   public constructor(private amethyst: Amethyst, public absolutePath: string) {
     this.path = absolutePath;

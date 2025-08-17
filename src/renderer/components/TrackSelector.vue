@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { Icon } from "@iconify/vue";
 import { useLocalStorage } from "@vueuse/core";
-import { computed } from "vue";
+import { computed, ref, watchEffect} from "vue";
 
 import { amethyst } from "@/amethyst.js";
 import { useContextMenu } from "@/components/ContextMenu";
 import type { PossibleSortingMethods } from "@/logic/queue";
+import {COMPARATORS_BY_METHOD} from "@/logic/queue";
+
 import { type Track, trackContextMenuOptions } from "@/logic/track";
 import type { IContextMenuOption } from "@/state";
 
@@ -14,28 +16,54 @@ import { useInspector } from "./Inspector";
 import NotApplicableText from "./NotApplicableText.vue";
 import LoadingIcon from "./v2/LoadingIcon.vue";
 
-const trackSelectorSortMethod = useLocalStorage<PossibleSortingMethods>("trackSelectorSortMethod", "default");
-const trackSelectorFilterText = useLocalStorage("trackSelectorFilterText", "");
 
-const tracks = computed(() => {
-  return amethyst.player.queue.getListSorted(trackSelectorSortMethod.value, trackSelectorFilterText.value);
+// Добавляем отдельные переменные для сортировки TrackSelector
+const trackSelectorSortMethod = useLocalStorage<PossibleSortingMethods>("trackSelectorSortMethod", "default");
+const trackSelectorSortDirection = useLocalStorage<"ascending" | "descending">("trackSelectorSortDirection", "ascending");
+const trackSelectorFilterText = useLocalStorage("trackSelectorFilterText", "");
+const isLoading = ref(false); // Добавлен индикатор загрузки
+
+// Используем watchEffect для реактивного обновления
+const tracks = ref<Track[]>([]);
+watchEffect(async () => {
+  isLoading.value = true;
+  try {
+    tracks.value = getListSorted(
+      trackSelectorSortMethod.value,
+      trackSelectorFilterText.value
+    );
+  } finally {
+    isLoading.value = false;
+  }
 });
 
+
+// FIXME: Got it from logic/queue.ts but we have no similar file for track selector
+function getListSorted(sortBy: PossibleSortingMethods, search?: string) {
+    //const sorted = [...(search ? this.search(search) : amethyst.state.milongaCandidateTracks)];
+    const sorted = [...(search ? amethyst.state.milongaCandidateTracks : amethyst.state.milongaCandidateTracks)];
+    sorted.sort(COMPARATORS_BY_METHOD[sortBy]);
+    if (trackSelectorSortDirection.value === "descending") {
+      sorted.reverse();
+    }
+    sorted.map(e => console.log(e.getTitle()))
+    return sorted;
+}
+
 const setCurrentSortedMethod = (sortBy: PossibleSortingMethods) => {
-  if (trackSelectorSortMethod.value == sortBy) {
-    if (amethyst.player.queue.currentSortingDirection.value === "ascending") {
-      amethyst.player.queue.currentSortingDirection.value = "descending";
-    }
-    else if (amethyst.player.queue.currentSortingDirection.value === "descending") {
-      amethyst.player.queue.currentSortingDirection.value = "ascending";
-      trackSelectorSortMethod.value = "default"; // disable sorting
-    }
-  }
-  else {
+  if (trackSelectorSortMethod.value === sortBy) {
+    // Переключение направления при повторном клике
+    trackSelectorSortDirection.value = 
+      trackSelectorSortDirection.value === "ascending" 
+        ? "descending" 
+        : "ascending";
+  } else {
+    // Новое поле сортировки - сбрасываем направление
     trackSelectorSortMethod.value = sortBy;
-    amethyst.player.queue.currentSortingDirection.value = "ascending";
+    trackSelectorSortDirection.value = "ascending";
   }
 };
+
 
 const isHoldingControl = amethyst.shortcuts.isControlPressed;
 
@@ -91,9 +119,15 @@ const handleColumnContextMenu = ({ x, y }: MouseEvent) => {
   <div
     class="text-13px text-text-title min-h-0 flex flex-col text-left relative select-none "
   >
+      <!-- Индикатор загрузки -->
+      <div v-if="isLoading" class="absolute inset-0 bg-surface-900 bg-opacity-75 z-50 flex items-center justify-center">
+      <div class="animate-spin">
+        <icon icon="svg-spinners:180-ring" class="w-8 h-8 text-primary" />
+      </div>
+    </div>
     <div
       class="flex text-left font-weight-user-defined sticky top-0 bg-surface-900 py-2 px-2 columnHeader min-h-36px"
-      :class="[amethyst.player.queue.currentSortingDirection.value]"
+      :class="[trackSelectorSortDirection]" 
       @contextmenu="handleColumnContextMenu($event)"
     >
       <div class="flex-none w-8" />

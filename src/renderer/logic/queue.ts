@@ -8,7 +8,7 @@ import type { Amethyst } from "@/amethyst.js";
 import { fisherYatesShuffle } from "@/logic/math.js";
 import { Track } from "@/logic/track.js";
 
-const COMPARATORS_BY_METHOD = {
+export const COMPARATORS_BY_METHOD = {
   default: () => 0,
   trackNumber: (a, b) => {
     const diskNumberDiff = (a.getDiskNumber() ?? 1) - (b.getDiskNumber() ?? 1);
