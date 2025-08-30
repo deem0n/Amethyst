@@ -12,9 +12,7 @@ import RouteHeader from "@/components/v2/RouteHeader.vue";
 import TrackSelector from "@/components/TrackSelector.vue";
 import SearchInput from "@/components/v2/SearchInput.vue";
 import type { Track } from "@/logic/track";
-const filterText = useLocalStorage("trackSelectorFilterText", "");
 
-const selectedMediaSource = ref<string>("All");
 const isLoading = ref(false); // Добавлен индикатор загрузки
 const mediaSources = computed(() => [
   { id: "All", name: "All Sources" },
@@ -24,6 +22,44 @@ const mediaSources = computed(() => [
   }))
 ]);
 
+
+
+const filterText = useLocalStorage("milongaTrackSelectorFilterText", "");
+const selectedMediaSource = useLocalStorage("milongaTrackSelectorMediaSource", "All");
+
+// Определяем тип для колонок Milonga
+type MilongaColumnKey = keyof typeof amethyst.state.settings.trackSelector.columns;
+const milongaColumns = useLocalStorage<Record<MilongaColumnKey, boolean>>("milongaTrackSelectorColumns", {
+  cover: true,
+  diskNumber: false,
+  trackNumber: true,
+  filename: true,
+  title: true,
+  artist: true,
+  location: false,
+  album: true,
+  genre: false,
+  barcode: false,
+  year: false,
+  label: false,
+  isrc: false,
+  copyright: false,
+  bpm: false,
+  duration: true,
+  container: false,
+  favorite: true,
+  sampleRate: false,
+  bitsPerSample: false,
+  bitrate: false,
+  size: false,
+});
+
+// Функция для обновления колонок Milonga
+const handleMilongaColumnUpdate = (key: MilongaColumnKey, value: boolean) => {
+  milongaColumns.value[key] = value;
+};
+
+
 // Реакция на выбор источника
 watch(selectedMediaSource, async (newSourceId) => {
   isLoading.value = true;
@@ -32,7 +68,7 @@ watch(selectedMediaSource, async (newSourceId) => {
   } finally {
     isLoading.value = false;
   }
-}, { immediate: true });
+}, { immediate: false });
 
 // Фильтрация треков по поиску
 const filteredTracks = computed(() => {
@@ -47,8 +83,10 @@ const filteredTracks = computed(() => {
   );
 });
 
-onMounted(() => {
-  amethyst.analytics.getDiscoveryTracks();
+onMounted(async () => {
+  isLoading.value = true;
+  await amethyst.loadMilongaCandidateTracks(selectedMediaSource.value);
+  isLoading.value = false;
 });
 
 </script>
@@ -104,7 +142,7 @@ onMounted(() => {
         :tracks="amethyst.analytics.tracksBasedOnRandom.value"
       />
 
-      <route-header :title="$t('route.milonga')">
+      <route-header :title="$t('milonga.trackSelector.title')">
 
         <div class="relative">
             <select 
@@ -124,7 +162,10 @@ onMounted(() => {
 
         <search-input v-model="filterText" :disabled="isLoading"/>
       </route-header>
-      <track-selector />
+      <track-selector 
+        :external-columns="milongaColumns"
+        :on-column-update="handleMilongaColumnUpdate"
+      />
     </div>
 
   </div>

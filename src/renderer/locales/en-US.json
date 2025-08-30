@@ -71,6 +71,7 @@
   "menu.about.user_manual": "User Manual...",
   "menu.about.github_repository": "GitHub repository...",
   "menu.about.discord_server": "Discord server...",
+  "milonga.trackSelector.title": "Track Selector",
   "search.placeholder": "Search",
   "search.command_palette.placeholder": "What do you wanna do?",
   "settings.info.tooltip": "Learn more about this setting",

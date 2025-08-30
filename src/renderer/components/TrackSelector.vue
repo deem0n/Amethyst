@@ -23,6 +23,20 @@ const trackSelectorSortDirection = useLocalStorage<"ascending" | "descending">("
 const trackSelectorFilterText = useLocalStorage("trackSelectorFilterText", "");
 const isLoading = ref(false); // Добавлен индикатор загрузки
 
+// Определяем тип для ключей колонок
+export type ColumnKey = keyof typeof amethyst.state.settings.trackSelector.columns;
+
+// Добавляем props для внешних колонок
+const props = defineProps<{
+  externalColumns?: Record<ColumnKey, boolean>;
+  onColumnUpdate?: (key: ColumnKey, value: boolean) => void;
+}>();
+
+// Используем внешние колонки если переданы, иначе стандартные
+const columns = computed(() => {
+  return props.externalColumns ?? amethyst.state.settings.trackSelector.columns;
+});
+
 // Используем watchEffect для реактивного обновления
 const tracks = ref<Track[]>([]);
 watchEffect(async () => {
@@ -74,7 +88,6 @@ const handleTrackContextMenu = ({ x, y }: MouseEvent, track: Track) => {
   useContextMenu().open({ x, y }, trackContextMenuOptions(track));
 };
 
-const columns = amethyst.state.settings.trackSelector.columns;
 
 const handleColumnContextMenu = ({ x, y }: MouseEvent) => {
   const contextMenu = useContextMenu();
@@ -106,8 +119,15 @@ const handleColumnContextMenu = ({ x, y }: MouseEvent) => {
 
   const menuItems: IContextMenuOption[] = columnOptions.map(({ key, title }) => ({
     title,
-    icon: columns[key] ? "ic:twotone-radio-button-checked" : "ic:twotone-radio-button-unchecked",
-    action: () => columns[key] = !columns[key],
+    icon: columns.value[key] ? "ic:twotone-radio-button-checked" : "ic:twotone-radio-button-unchecked",
+    action: () => {
+      const newValue = !columns.value[key];
+      if (props.onColumnUpdate) {
+        props.onColumnUpdate(key, newValue);
+      } else {
+        amethyst.state.settings.trackSelector.columns[key] = newValue;
+      }
+    },
   }));
 
   contextMenu.open({ x, y }, menuItems);
