@@ -4,7 +4,7 @@ import { onMounted, computed, ref, watch  } from "vue";
 
 import { amethyst } from "@/amethyst.js";
 import BigButton from "@/components/BigButton.vue";
-import DiscoveryFeed from "@/components/DiscoveryFeed.vue";
+import MilongaPlan from "@/components/MilongaPlan.vue";
 import RouteHeader from "@/components/v2/RouteHeader.vue";
 
 
@@ -83,6 +83,13 @@ const filteredTracks = computed(() => {
   );
 });
 
+// Get some random tracks for the Milonga plan
+const milongaPlanTracks = computed(() => {
+  // Get up to 12 random tracks for the Milonga plan (3 groups of 4)
+  const shuffled = [...amethyst.state.milongaCandidateTracks].sort(() => 0.5 - Math.random());
+  return shuffled.slice(0, 23);
+});
+
 onMounted(async () => {
   isLoading.value = true;
   await amethyst.loadMilongaCandidateTracks(selectedMediaSource.value);
@@ -136,21 +143,21 @@ onMounted(async () => {
     </div>
 
     <div class="flex flex-col overflow-y-auto gap-2 h-full pb-56">
-      <discovery-feed
-        :title="$t('discovery.random.title')"
-        :subtitle="$t('discovery.random.description')"
-        :tracks="amethyst.analytics.tracksBasedOnRandom.value"
+      <milonga-plan
+        :title="$t('milonga.plan.title')"
+        :subtitle="$t('milonga.plan.description')"
+        :tracks="milongaPlanTracks"
       />
 
       <route-header :title="$t('milonga.trackSelector.title')">
 
         <div class="relative">
-            <select 
+            <select
               v-model="selectedMediaSource"
               class="appearance-none bg-surface-700 text-text-title rounded-l-lg pl-3 pr-8 py-2 focus:outline-none cursor-pointer"
               :disabled="isLoading"
               >
-              <option 
+              <option
                 v-for="source in mediaSources" 
                 :key="source.id" 
                 :value="source.id"
