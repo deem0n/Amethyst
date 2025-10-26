@@ -7,13 +7,12 @@ import BigButton from "@/components/BigButton.vue";
 import MilongaPlan from "@/components/MilongaPlan.vue";
 import RouteHeader from "@/components/v2/RouteHeader.vue";
 
-
 // By Dima
 import TrackSelector from "@/components/TrackSelector.vue";
 import SearchInput from "@/components/v2/SearchInput.vue";
 import type { Track } from "@/logic/track";
 
-const isLoading = ref(false); // Добавлен индикатор загрузки
+const isLoading = ref(false);
 const mediaSources = computed(() => [
   { id: "All", name: "All Sources" },
   ...amethyst.mediaSourceManager.mediaSources.value.map(source => ({
@@ -21,8 +20,6 @@ const mediaSources = computed(() => [
     name: source.name
   }))
 ]);
-
-
 
 const filterText = useLocalStorage("milongaTrackSelectorFilterText", "");
 const selectedMediaSource = useLocalStorage("milongaTrackSelectorMediaSource", "All");
@@ -59,12 +56,18 @@ const handleMilongaColumnUpdate = (key: MilongaColumnKey, value: boolean) => {
   milongaColumns.value[key] = value;
 };
 
-
 // Реакция на выбор источника
 watch(selectedMediaSource, async (newSourceId) => {
   isLoading.value = true;
   try {
     await amethyst.loadMilongaCandidateTracks(newSourceId);
+    // После загрузки новых треков можно обновить MilongaPlan если нужно
+    // Например, очистить или добавить несколько случайных треков
+    if (milongaPlanTracks.value.length === 0) {
+      // Если план пустой, добавим несколько случайных треков
+      const randomTracks = getRandomTracks(8); // 2 тандЫ
+      milongaPlanTracks.value = randomTracks;
+    }
   } finally {
     isLoading.value = false;
   }
@@ -83,28 +86,41 @@ const filteredTracks = computed(() => {
   );
 });
 
-// Get some random tracks for the Milonga plan
-const milongaPlanTracks = computed(() => {
-  // Get up to 12 random tracks for the Milonga plan (3 groups of 4)
+// Заменяем computed на ref для управления состоянием
+const milongaPlanTracks = ref<Track[]>([]);
+
+// Функция для получения случайных треков
+const getRandomTracks = (count: number): Track[] => {
+  if (amethyst.state.milongaCandidateTracks.length === 0) return [];
   const shuffled = [...amethyst.state.milongaCandidateTracks].sort(() => 0.5 - Math.random());
-  return shuffled.slice(0, 23);
-});
+  return shuffled.slice(0, count);
+};
+
+// Функция для обработки обновления треков из MilongaPlan
+const handleTracksUpdated = (updatedTracks: Track[]) => {
+  console.log('Tracks updated in MilongaView:', updatedTracks.length);
+  milongaPlanTracks.value = updatedTracks;
+};
 
 onMounted(async () => {
   isLoading.value = true;
   await amethyst.loadMilongaCandidateTracks(selectedMediaSource.value);
+  
+  // Инициализируем MilongaPlan несколькими случайными треками
+  const initialTracks = getRandomTracks(12); // 3 тандЫ
+  milongaPlanTracks.value = initialTracks;
+  
   isLoading.value = false;
 });
-
 </script>
 
 <template>
   <div class="w-full py-2 pl-4 pr-2 text-text-title ">
     <route-header :title="$t('route.milonga')" />
-          <!-- Индикатор загрузки рядом с селектором -->
-          <div v-if="isLoading" class="absolute right-0 top-0 mr-2 mt-2">
-        <icon icon="svg-spinners:180-ring" class="w-5 h-5 text-primary" />
-      </div>
+    <!-- Индикатор загрузки рядом с селектором -->
+    <div v-if="isLoading" class="absolute right-0 top-0 mr-2 mt-2">
+      <icon icon="svg-spinners:180-ring" class="w-5 h-5 text-primary" />
+    </div>
     <div class="flex gap-2 mt-1 mr-2">
       <big-button
         class="flex gap-2"
@@ -147,24 +163,24 @@ onMounted(async () => {
         :title="$t('milonga.plan.title')"
         :subtitle="$t('milonga.plan.description')"
         :tracks="milongaPlanTracks"
+        @tracks-updated="handleTracksUpdated"
       />
 
       <route-header :title="$t('milonga.trackSelector.title')">
-
         <div class="relative">
-            <select
-              v-model="selectedMediaSource"
-              class="appearance-none bg-surface-700 text-text-title rounded-l-lg pl-3 pr-8 py-2 focus:outline-none cursor-pointer"
-              :disabled="isLoading"
-              >
-              <option
-                v-for="source in mediaSources" 
-                :key="source.id" 
-                :value="source.id"
-              >
-                {{ source.name }}
-              </option>
-            </select>
+          <select
+            v-model="selectedMediaSource"
+            class="appearance-none bg-surface-700 text-text-title rounded-l-lg pl-3 pr-8 py-2 focus:outline-none cursor-pointer"
+            :disabled="isLoading"
+          >
+            <option
+              v-for="source in mediaSources" 
+              :key="source.id" 
+              :value="source.id"
+            >
+              {{ source.name }}
+            </option>
+          </select>
         </div>
 
         <search-input v-model="filterText" :disabled="isLoading"/>
@@ -174,6 +190,5 @@ onMounted(async () => {
         :on-column-update="handleMilongaColumnUpdate"
       />
     </div>
-
   </div>
 </template>

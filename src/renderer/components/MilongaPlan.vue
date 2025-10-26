@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import type { Track } from "@/logic/track";
+import { amethyst } from "@/amethyst.js";
 import TitleSubtitle from "./v2/TitleSubtitle.vue";
 import CoverArt from "./CoverArt.vue";
 import NotApplicableText from "./NotApplicableText.vue";
@@ -29,90 +30,130 @@ const activeDropZone = ref<{tandaIndex: number, position: number} | null>(null);
 // Обработчики событий перетаскивания
 const handleDragOver = (event: DragEvent, tandaIndex: number, position: number) => {
   event.preventDefault();
-  // Разрешаем только перемещение
+  event.stopPropagation();
+  
   if (event.dataTransfer) {
-    event.dataTransfer.dropEffect = 'move';
+    // Проверяем, есть ли подходящие данные для перетаскивания
+    const hasTrackData = event.dataTransfer.types.includes('application/json') || 
+                         event.dataTransfer.types.includes('text/plain');
+    
+    if (hasTrackData) {
+      event.dataTransfer.dropEffect = 'move';
+      activeDropZone.value = { tandaIndex, position };
+    } else {
+      event.dataTransfer.dropEffect = 'none';
+    }
   }
-  activeDropZone.value = { tandaIndex, position };
 };
 
-const handleDragLeave = () => {
-  activeDropZone.value = null;
+const handleDragLeave = (event: DragEvent) => {
+  event.preventDefault();
+  // Проверяем, действительно ли мы вышли из элемента, а не просто перешли на дочерний
+  const relatedTarget = event.relatedTarget as Node;
+  const currentTarget = event.currentTarget as HTMLElement;
+  
+  if (!currentTarget.contains(relatedTarget)) {
+    activeDropZone.value = null;
+  }
 };
 
 const handleDrop = async (event: DragEvent, tandaIndex: number, position: number) => {
   event.preventDefault();
-  activeDropZone.value = null;
+  event.stopPropagation();
+  
+  console.log('Drop event data types:', event.dataTransfer?.types); // Для отладки
+  
+  let track: Track | null = null;
   
   try {
-    // Получаем данные о перетаскиваемых файлах из electron drag&drop
-    const files = event.dataTransfer?.files;
-    
-    if (files && files.length > 0) {
-      // Берем первый файл (предполагаем, что перетаскивается один трек)
-      const file = files[0];
-      const filePath = file.path;
-      
-      // Ищем трек в общем списке треков по абсолютному пути
-      const track = amethyst.state.milongaCandidateTracks.find(t => 
-        t.absolutePath === filePath || t.path === filePath
-      );
-      
-      if (track) {
-        // Создаем новый массив треков с обновленной тандой
-        const newTracks = [...props.tracks];
-        
-        // Вычисляем индекс в плоском массиве
-        const flatIndex = tandaIndex * 4 + position;
-        
-        // Если позиция уже занята, заменяем трек
-        if (flatIndex < newTracks.length) {
-          newTracks[flatIndex] = track;
-        } else {
-          // Если позиция пустая, добавляем новый трек
-          // Заполняем пробелы null'ами если нужно
-          while (newTracks.length < flatIndex) {
-            newTracks.push(null as any);
-          }
-          newTracks.push(track);
+    // В первую очередь пробуем получить кастомные JSON данные
+    const jsonData = event.dataTransfer?.getData('application/json');
+    if (jsonData) {
+      try {
+        const trackData = JSON.parse(jsonData);
+        if (trackData.type === 'amethyst/track') {
+          console.log('Found track data in JSON:', trackData); // Для отладки
+          
+          // Ищем трек по абсолютному пути в candidate tracks
+          track = amethyst.state.milongaCandidateTracks.find(t => 
+            t.absolutePath === trackData.absolutePath || 
+            t.path === trackData.path
+          );
         }
-        
-        // Фильтруем null'ы (если они были добавлены)
-        const filteredTracks = newTracks.filter(t => t !== null);
-        
-        // Отправляем обновленный список наружу
-        emit('tracksUpdated', filteredTracks);
-      } else {
-        console.log('Track not found in candidate tracks:', filePath);
+      } catch (error) {
+        console.error('Error parsing JSON data:', error);
       }
+    }
+
+    // Если не нашли через JSON, пробуем через text/plain (абсолютный путь)
+    if (!track) {
+      const pathData = event.dataTransfer?.getData('text/plain');
+      if (pathData) {
+        console.log('Found path data in text:', pathData); // Для отладки
+        
+        track = amethyst.state.milongaCandidateTracks.find(t => 
+          t.absolutePath === pathData || 
+          t.path === pathData
+        );
+      }
+    }
+    
+    // Для отладки: выводим информацию о доступных треках
+    if (!track) {
+      console.log('Available candidate tracks:', amethyst.state.milongaCandidateTracks.map(t => ({
+        absolutePath: t.absolutePath,
+        path: t.path,
+        title: t.getTitle()
+      })));
+    }
+    if (track) {
+      console.log('Successfully found track:', track.getTitle()); // Для отладки
+      
+      // Создаем новый массив треков
+      const newTracks = [...props.tracks];
+      const flatIndex = tandaIndex * 4 + position;
+      
+      // Заменяем или добавляем трек
+      if (flatIndex < newTracks.length) {
+        newTracks[flatIndex] = track;
+      } else {
+        // Добавляем null для заполнения пробелов если нужно
+        while (newTracks.length < flatIndex) {
+          newTracks.push(null as any);
+        }
+        newTracks.push(track);
+      }
+      
+      // Фильтруем null'ы и отправляем обновленный список
+      const filteredTracks = newTracks.filter(t => t !== null) as Track[];
+      emit('tracksUpdated', filteredTracks);
+    } else {
+      console.warn('Track not found in candidate tracks');
     }
   } catch (error) {
     console.error('Error handling drop:', error);
+  } finally {
+    activeDropZone.value = null;
   }
 };
 
-// Функция для начала перетаскивания существующих треков из самой танды
+// Функция для перетаскивания существующих треков внутри MilongaPlan
 const handleDragStart = (event: DragEvent, track: Track) => {
   if (!event.dataTransfer) return;
   
-  // Используем electron drag&drop для перетаскивания файлов
-  // Создаем File объект для перетаскивания
-  const file = new File([], track.getFilename(), { 
-    type: 'audio/' + track.getContainer() 
-  });
+  // Устанавливаем кастомные данные
+  const trackData = {
+    type: 'amethyst/track',
+    absolutePath: track.absolutePath,
+    path: track.path,
+    filename: track.getFilename(),
+    title: track.getTitle(),
+    artist: track.getArtistsFormatted()
+  };
   
-  // Добавляем свойство path для electron
-  (file as any).path = track.absolutePath;
-  
-  const dataTransfer = event.dataTransfer;
-  dataTransfer.effectAllowed = 'move';
-  
-  // Используем DataTransferItemList для добавления файла
-  const dataTransferItemList = dataTransfer.items;
-  dataTransferItemList.add(file);
-  
-  // Также добавляем путь как plain text для обратной совместимости
-  dataTransfer.setData('text/plain', track.absolutePath);
+  event.dataTransfer.setData('application/json', JSON.stringify(trackData));
+  event.dataTransfer.setData('text/plain', track.absolutePath);
+  event.dataTransfer.effectAllowed = 'move';
 };
 
 // Функция для добавления новой танды
@@ -253,5 +294,16 @@ const addNewTanda = () => {
 
 .tanda-empty-slot:hover {
   background-color: rgba(255, 255, 255, 0.05);
+}
+
+.tanda-slot.drag-over {
+  background-color: rgba(59, 130, 246, 0.1);
+  border: 2px dashed rgb(59, 130, 246);
+  border-radius: 4px;
+}
+
+.tanda-empty-slot.drag-over {
+  background-color: rgba(59, 130, 246, 0.2);
+  border-color: rgb(59, 130, 246);
 }
 </style>

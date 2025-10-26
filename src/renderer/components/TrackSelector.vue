@@ -133,6 +133,87 @@ const handleColumnContextMenu = ({ x, y }: MouseEvent) => {
   contextMenu.open({ x, y }, menuItems);
 };
 
+const handleTrackDragStart = async (event: DragEvent, track: Track) => {
+  if (!event.dataTransfer) return;
+  
+  // Устанавливаем кастомные данные для внутреннего использования
+  const trackData = {
+    type: 'amethyst/track',
+    absolutePath: track.absolutePath,
+    path: track.path,
+    filename: track.getFilename(),
+    title: track.getTitle(),
+    artist: track.getArtistsFormatted()
+  };
+  
+  event.dataTransfer.setData('application/json', JSON.stringify(trackData));
+  event.dataTransfer.setData('text/plain', track.absolutePath);
+  event.dataTransfer.effectAllowed = 'copyMove';
+  
+  createCustomDragImage(event, track);
+
+  console.log('Setting drag data:', trackData); // Для отладки
+  
+  // Затем вызываем оригинальную функцию amethyst для Electron drag
+  await amethyst.handleTrackDragStart(event, track);
+};
+
+const createCustomDragImage = (event: DragEvent, track: Track) => {
+  // Создаем элемент для drag image
+  const dragImage = document.createElement('div');
+  dragImage.style.width = '64px';
+  dragImage.style.height = '64px';
+  dragImage.style.borderRadius = '6px';
+  dragImage.style.overflow = 'hidden';
+  dragImage.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+  dragImage.style.border = '2px solid rgba(255,255,255,0.1)';
+  
+  // Проверяем, есть ли обложка у трека
+  const coverUrl = track.isLoaded && track.getCover() ? track.getCover() : '';
+  if (coverUrl) {
+    // Используем обложку
+    const img = document.createElement('img');
+    img.src = coverUrl;
+    img.style.width = '100%';
+    img.style.height = '100%';
+    img.style.objectFit = 'cover';
+    dragImage.appendChild(img);
+  } else {
+    // Используем иконку ноты как запасной вариант
+    dragImage.style.backgroundColor = '#374151'; // surface-600
+    dragImage.style.display = 'flex';
+    dragImage.style.alignItems = 'center';
+    dragImage.style.justifyContent = 'center';
+    
+    const icon = document.createElement('div');
+    icon.innerHTML = `
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
+      </svg>
+    `;
+    icon.style.color = '#9CA3AF'; // text-subtitle
+    dragImage.appendChild(icon);
+  }
+  
+  // Добавляем элемент в DOM (невидимо)
+  dragImage.style.position = 'fixed';
+  dragImage.style.top = '-100px';
+  dragImage.style.left = '-100px';
+  dragImage.style.opacity = '0.9';
+  dragImage.style.zIndex = '10000';
+  document.body.appendChild(dragImage);
+  
+  // Устанавливаем drag image
+  event.dataTransfer.setDragImage(dragImage, 32, 32);
+  
+  // Удаляем элемент после установки drag image
+  setTimeout(() => {
+    if (document.body.contains(dragImage)) {
+      document.body.removeChild(dragImage);
+    }
+  }, 0);
+};
+
 </script>
 
 <template>
@@ -456,7 +537,7 @@ const handleColumnContextMenu = ({ x, y }: MouseEvent) => {
           ]"
           draggable="true"
           @contextmenu="handleTrackContextMenu($event, item)"
-          @dragstart.prevent="amethyst.handleTrackDragStart($event, item)"
+          @dragstart="handleTrackDragStart($event, item)"
           @keypress.prevent
           @click="isHoldingControl ? amethyst.showItem(item.path) : amethyst.player.play(item)"
         >
