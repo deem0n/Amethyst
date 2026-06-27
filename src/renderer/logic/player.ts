@@ -56,6 +56,7 @@ export class Player extends EventEmitter<PlayerEvents> {
   public currentTime = ref(0);
   public timeStarted = ref(0);
   public queue = new Queue(this.amethyst);
+  private trackFinishedInterceptor?: () => boolean;
 
   public input = new Audio();
   public context = new AudioContext({ latencyHint: "interactive", sampleRate: this.amethyst.state.settings.audio.resampleRate });
@@ -200,6 +201,10 @@ export class Player extends EventEmitter<PlayerEvents> {
   public next() {
     this.emit("player:trackFinished", { track: this.getCurrentTrack(), startTimestamp: this.timeStarted.value });
 
+    if (this.trackFinishedInterceptor?.()) {
+      return;
+    }
+
     if (this.loopMode.value === LoopMode.One) {
       this.play(this.currentTrackIndex.value);
       return;
@@ -330,6 +335,10 @@ export class Player extends EventEmitter<PlayerEvents> {
 
   public getCurrentTrack(): Track | undefined {
     return this.currentTrack.value;
+  }
+
+  public setTrackFinishedInterceptor(interceptor?: () => boolean) {
+    this.trackFinishedInterceptor = interceptor;
   }
 
   public currentTimeFormatted(colinNotation?: boolean) {

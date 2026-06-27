@@ -1,5 +1,5 @@
 import { AmethystPlatforms } from "@/amethyst.js";
-import type { MediaSourceType } from "@/logic/mediaSources.js";
+import type { MediaSourceType } from "@/logic/MediaSource/index.js";
 
 export const VALID_SAMPLE_RATES = [
   4000,
@@ -175,7 +175,7 @@ const DEFAULT_INTEGRATION_SETTINGS = {
 
 const DEFAULT_MEDIA_SOURCE_SETTINGS = {
   mediaSources: {
-    saveMediaSources: [{}] as { type: MediaSourceType; path: string; uuid: string }[],
+    saveMediaSources: [{}] as { type: MediaSourceType; path?: string; uuid?: string; url?: string; username?: string; password?: string }[],
   },
 };
 
@@ -200,6 +200,9 @@ const DEFAULT_COLUMN_SETTINGS = {
     filename: false,
     album: true,
     year: true,
+    playCount: false,
+    skipCount: false,
+    dateAdded: true,
     bitsPerSample: true,
     genre: false,
     bitrate: true,
@@ -283,6 +286,9 @@ export const createDefaultSettings = (platform: AmethystPlatforms): typeof DEFAU
       genre: false,
       bitrate: false,
       sampleRate: false,
+      playCount: false,
+      skipCount: false,
+      dateAdded: false,
       barcode: false,
       label: false,
       isrc: false,

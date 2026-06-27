@@ -30,6 +30,7 @@ export type ColumnKey = keyof typeof amethyst.state.settings.trackSelector.colum
 const props = defineProps<{
   externalColumns?: Record<ColumnKey, boolean>;
   onColumnUpdate?: (key: ColumnKey, value: boolean) => void;
+  searchText?: string;
 }>();
 
 // Используем внешние колонки если переданы, иначе стандартные
@@ -44,7 +45,7 @@ watchEffect(async () => {
   try {
     tracks.value = getListSorted(
       trackSelectorSortMethod.value,
-      trackSelectorFilterText.value
+      props.searchText ?? trackSelectorFilterText.value
     );
   } finally {
     isLoading.value = false;
@@ -54,13 +55,20 @@ watchEffect(async () => {
 
 // FIXME: Got it from logic/queue.ts but we have no similar file for track selector
 function getListSorted(sortBy: PossibleSortingMethods, search?: string) {
-    //const sorted = [...(search ? this.search(search) : amethyst.state.milongaCandidateTracks)];
-    const sorted = [...(search ? amethyst.state.milongaCandidateTracks : amethyst.state.milongaCandidateTracks)];
+    const normalizedSearch = search?.trim().toLowerCase();
+    const candidates = normalizedSearch
+      ? amethyst.state.milongaCandidateTracks.filter((track) =>
+        track.getTitle()?.toLowerCase().includes(normalizedSearch)
+        || track.getArtistsFormatted()?.toLowerCase().includes(normalizedSearch)
+        || track.getAlbum()?.toLowerCase().includes(normalizedSearch)
+        || track.getFilename()?.toLowerCase().includes(normalizedSearch)
+      )
+      : amethyst.state.milongaCandidateTracks;
+    const sorted = [...candidates];
     sorted.sort(COMPARATORS_BY_METHOD[sortBy]);
     if (trackSelectorSortDirection.value === "descending") {
       sorted.reverse();
     }
-    sorted.map(e => console.log(e.getTitle()))
     return sorted;
 }
 

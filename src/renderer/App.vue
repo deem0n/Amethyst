@@ -10,6 +10,7 @@ import CoverArt from "@/components/CoverArt.vue";
 import { InspectorBar, useInspector } from "@/components/Inspector";
 import NavigationBar from "@/components/NavigationBar.vue";
 import NavigationButton from "@/components/NavigationButton.vue";
+import BaseOverlay from "@/components/BaseOverlay.vue";
 import TopBar from "@/components/TopBar.vue";
 import PlaybackControls from "@/components/v2/PlaybackControls.vue";
 import SpectrumAnalyzerComposite from "@/components/visualizers/SpectrumAnalyzerComposite.vue";
@@ -21,9 +22,7 @@ import CommandPalette from "./components/CommandPalette/CommandPalette.vue";
 const ambientBackgroundImage = ref("");
 
 const setAmbientCover = async (track: Track) => {
-  track.getCoverAsBlob()
-    .then((blob) => ambientBackgroundImage.value = URL.createObjectURL(blob))
-    .catch(() => ambientBackgroundImage.value = "");
+  ambientBackgroundImage.value = track.getCover() || "";
 };
 
 const fallbackToDefault = () => {
@@ -166,26 +165,20 @@ watch(() => amethyst.state.showBigSpectrum.value, () => {
       :ambient-background-image="ambientBackgroundImage"
     />
 
-    <div
+    <base-overlay
       v-if="amethyst.state.window.isShowingBigCover"
-      class=" select-none rounded-8px w-full sm:w-auto max-w-3/4 max-h-3/4 truncate absolute-xy z-50"
-      style="aspect-ratio: 1/1;"
+      @click="amethyst.state.window.isShowingBigCover = !amethyst.state.window.isShowingBigCover"
     >
       <cover-art
         :url="ambientBackgroundImage"
-        class="w-full drop-shadow-2xl z-30"
+        class="w-auto max-w-1/2.5 max-h-1/1.5 drop-shadow-2xl z-30 rounded-8px"
+
+        @click.stop
         @contextmenu="useContextMenu().open({x: $event.x, y: $event.y}, [
           { title: 'Export cover...', icon: 'ic:twotone-add-photo-alternate', action: () => amethyst.player.getCurrentTrack()?.exportCover() },
         ]);"
-        @click="amethyst.state.window.isShowingBigCover = !amethyst.state.window.isShowingBigCover"
       />
-
-      <icon
-        icon="ic:twotone-close"
-        class="utilityButton absolute top-3 right-3 cursor-pointer"
-        @click="amethyst.state.window.isShowingBigCover = false"
-      />
-    </div>
+    </base-overlay>
 
     <div
       v-if="amethyst.getCurrentPlatform() == 'web'"

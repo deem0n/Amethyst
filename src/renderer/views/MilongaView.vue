@@ -1,16 +1,18 @@
 <script setup lang="ts">
 import { useLocalStorage } from "@vueuse/core";
-import { onMounted, computed, ref, watch  } from "vue";
+import { onBeforeUnmount, onMounted, computed, ref, watch  } from "vue";
 
 import { amethyst } from "@/amethyst.js";
 import BigButton from "@/components/BigButton.vue";
-import MilongaPlan from "@/components/MilongaPlan.vue";
+import MilongaPlan, { type CortinaSlot } from "@/components/MilongaPlan.vue";
 import RouteHeader from "@/components/v2/RouteHeader.vue";
 
 // By Dima
 import TrackSelector from "@/components/TrackSelector.vue";
 import SearchInput from "@/components/v2/SearchInput.vue";
 import type { Track } from "@/logic/track";
+
+type PlanTrack = Track | null;
 
 const isLoading = ref(false);
 const mediaSources = computed(() => [
@@ -23,6 +25,54 @@ const mediaSources = computed(() => [
 
 const filterText = useLocalStorage("milongaTrackSelectorFilterText", "");
 const selectedMediaSource = useLocalStorage("milongaTrackSelectorMediaSource", "All");
+const planPaneSize = useLocalStorage("milongaWorkspacePlanPaneSize", 42);
+const workspaceElement = ref<HTMLElement | null>(null);
+const isResizingWorkspace = ref(false);
+const currentTrackPath = ref<string>();
+const milongaPlaybackSequence = ref<Track[]>([]);
+const milongaPlaybackIndex = ref(-1);
+
+const workspaceStyle = computed(() => ({
+  "--milonga-plan-size": `${planPaneSize.value}%`,
+}));
+
+const clampPlanPaneSize = (size: number) => Math.min(70, Math.max(25, size));
+
+const isStackedWorkspace = () => {
+  if (!workspaceElement.value) return window.innerWidth <= 1180;
+  return workspaceElement.value.clientWidth <= 1180;
+};
+
+const handleWorkspaceResize = (event: MouseEvent) => {
+  if (!isResizingWorkspace.value || !workspaceElement.value) return;
+
+  event.preventDefault();
+  const rect = workspaceElement.value.getBoundingClientRect();
+  const pointerOffset = isStackedWorkspace()
+    ? event.clientY - rect.top
+    : event.clientX - rect.left;
+  const totalSize = isStackedWorkspace() ? rect.height : rect.width;
+
+  if (totalSize <= 0) return;
+  planPaneSize.value = clampPlanPaneSize((pointerOffset / totalSize) * 100);
+};
+
+const stopWorkspaceResize = () => {
+  if (!isResizingWorkspace.value) return;
+  isResizingWorkspace.value = false;
+  document.body.classList.remove("milonga-is-resizing");
+};
+
+const startWorkspaceResize = (event: MouseEvent) => {
+  event.preventDefault();
+  isResizingWorkspace.value = true;
+  document.body.classList.add("milonga-is-resizing");
+  handleWorkspaceResize(event);
+};
+
+const resetWorkspaceResize = () => {
+  planPaneSize.value = 42;
+};
 
 // Определяем тип для колонок Milonga
 type MilongaColumnKey = keyof typeof amethyst.state.settings.trackSelector.columns;
@@ -73,21 +123,25 @@ watch(selectedMediaSource, async (newSourceId) => {
   }
 }, { immediate: false });
 
-// Фильтрация треков по поиску
-const filteredTracks = computed(() => {
-  if (!filterText.value) return amethyst.state.milongaCandidateTracks;
-  
-  const searchTerm = filterText.value.toLowerCase();
-  return amethyst.state.milongaCandidateTracks.filter(track => 
-    track.getTitle()?.toLowerCase().includes(searchTerm) ||
-    track.getArtistsFormatted()?.toLowerCase().includes(searchTerm) ||
-    track.getAlbum()?.toLowerCase().includes(searchTerm) ||
-    track.getFilename()?.toLowerCase().includes(searchTerm)
-  );
+// Заменяем computed на ref для управления состоянием
+const milongaPlanTracks = ref<PlanTrack[]>([]);
+const milongaCortinaSlots = ref<CortinaSlot[]>([]);
+
+const createAutomaticCortina = (): CortinaSlot => ({
+  mode: "automatic",
+  track: null,
 });
 
-// Заменяем computed на ref для управления состоянием
-const milongaPlanTracks = ref<Track[]>([]);
+const ensureCortinaSlotsForTracks = (tracks: PlanTrack[]) => {
+  const cortinaCount = Math.max(0, Math.ceil(tracks.length / 4) - 1);
+  const nextSlots = milongaCortinaSlots.value.slice(0, cortinaCount);
+
+  while (nextSlots.length < cortinaCount) {
+    nextSlots.push(createAutomaticCortina());
+  }
+
+  milongaCortinaSlots.value = nextSlots;
+};
 
 // Функция для получения случайных треков
 const getRandomTracks = (count: number): Track[] => {
@@ -97,31 +151,153 @@ const getRandomTracks = (count: number): Track[] => {
 };
 
 // Функция для обработки обновления треков из MilongaPlan
-const handleTracksUpdated = (updatedTracks: Track[]) => {
+const handleTracksUpdated = (updatedTracks: PlanTrack[]) => {
   console.log('Tracks updated in MilongaView:', updatedTracks.length);
   milongaPlanTracks.value = updatedTracks;
+  ensureCortinaSlotsForTracks(updatedTracks);
+};
+
+const handleCortinaSlotsUpdated = (updatedCortinaSlots: CortinaSlot[]) => {
+  milongaCortinaSlots.value = updatedCortinaSlots;
+};
+
+const getManualCortinaTrack = (cortinaIndex: number) => {
+  const slot = milongaCortinaSlots.value[cortinaIndex];
+  return slot?.mode === "manual" ? slot.track : null;
+};
+
+const buildMilongaSequenceFromTandaTrack = (startTandaIndex: number, startPosition: number) => {
+  const sequence: Track[] = [];
+  const tandaCount = Math.ceil(milongaPlanTracks.value.length / 4);
+
+  for (let tandaIndex = startTandaIndex; tandaIndex < tandaCount; tandaIndex++) {
+    const firstPosition = tandaIndex === startTandaIndex ? startPosition : 0;
+
+    for (let position = firstPosition; position < 4; position++) {
+      const track = milongaPlanTracks.value[tandaIndex * 4 + position];
+      if (track) sequence.push(track);
+    }
+
+    const cortinaTrack = getManualCortinaTrack(tandaIndex);
+    if (cortinaTrack) sequence.push(cortinaTrack);
+  }
+
+  return sequence;
+};
+
+const buildMilongaSequenceFromCortina = (cortinaIndex: number) => {
+  const sequence: Track[] = [];
+  const cortinaTrack = getManualCortinaTrack(cortinaIndex);
+  if (cortinaTrack) sequence.push(cortinaTrack);
+
+  const nextTandaSequence = buildMilongaSequenceFromTandaTrack(cortinaIndex + 1, 0);
+  sequence.push(...nextTandaSequence);
+  return sequence;
+};
+
+const playMilongaSequence = (sequence: Track[]) => {
+  milongaPlaybackSequence.value = sequence;
+  milongaPlaybackIndex.value = 0;
+
+  const firstTrack = sequence[0];
+  if (firstTrack) {
+    currentTrackPath.value = firstTrack.path;
+    amethyst.player.play(firstTrack);
+  }
+};
+
+const playNextMilongaSequenceTrack = () => {
+  if (milongaPlaybackIndex.value < 0) return false;
+
+  const nextIndex = milongaPlaybackIndex.value + 1;
+  const nextTrack = milongaPlaybackSequence.value[nextIndex];
+
+  if (!nextTrack) {
+    milongaPlaybackSequence.value = [];
+    milongaPlaybackIndex.value = -1;
+    currentTrackPath.value = undefined;
+    amethyst.player.pause();
+    return true;
+  }
+
+  milongaPlaybackIndex.value = nextIndex;
+  currentTrackPath.value = nextTrack.path;
+  amethyst.player.play(nextTrack);
+  return true;
+};
+
+const handleMilongaTandaTrackPlay = ({ tandaIndex, position }: { tandaIndex: number; position: number }) => {
+  playMilongaSequence(buildMilongaSequenceFromTandaTrack(tandaIndex, position));
+};
+
+const handleMilongaCortinaPlay = ({ cortinaIndex }: { cortinaIndex: number }) => {
+  playMilongaSequence(buildMilongaSequenceFromCortina(cortinaIndex));
+};
+
+const handlePlayerTrackChange = (track: Track) => {
+  currentTrackPath.value = track.path;
+
+  const activeMilongaTrack = milongaPlaybackSequence.value[milongaPlaybackIndex.value];
+  if (activeMilongaTrack && activeMilongaTrack.path !== track.path) {
+    milongaPlaybackSequence.value = [];
+    milongaPlaybackIndex.value = -1;
+  }
+};
+
+const handlePlayerStop = () => {
+  currentTrackPath.value = undefined;
+  milongaPlaybackSequence.value = [];
+  milongaPlaybackIndex.value = -1;
+};
+
+const handlePlayerPause = () => {
+  currentTrackPath.value = undefined;
+};
+
+const handlePlayerResume = (track: Track) => {
+  currentTrackPath.value = track.path;
 };
 
 onMounted(async () => {
+  window.addEventListener("mousemove", handleWorkspaceResize);
+  window.addEventListener("mouseup", stopWorkspaceResize);
+  amethyst.player.on("player:trackChange", handlePlayerTrackChange);
+  amethyst.player.on("player:stop", handlePlayerStop);
+  amethyst.player.on("player:pause", handlePlayerPause);
+  amethyst.player.on("player:resume", handlePlayerResume);
+  amethyst.player.setTrackFinishedInterceptor(playNextMilongaSequenceTrack);
+
   isLoading.value = true;
   await amethyst.loadMilongaCandidateTracks(selectedMediaSource.value);
   
   // Инициализируем MilongaPlan несколькими случайными треками
   const initialTracks = getRandomTracks(12); // 3 тандЫ
   milongaPlanTracks.value = initialTracks;
+  ensureCortinaSlotsForTracks(initialTracks);
   
   isLoading.value = false;
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("mousemove", handleWorkspaceResize);
+  window.removeEventListener("mouseup", stopWorkspaceResize);
+  amethyst.player.off("player:trackChange", handlePlayerTrackChange);
+  amethyst.player.off("player:stop", handlePlayerStop);
+  amethyst.player.off("player:pause", handlePlayerPause);
+  amethyst.player.off("player:resume", handlePlayerResume);
+  amethyst.player.setTrackFinishedInterceptor(undefined);
+  document.body.classList.remove("milonga-is-resizing");
 });
 </script>
 
 <template>
-  <div class="w-full py-2 pl-4 pr-2 text-text-title ">
+  <div class="milonga-view">
     <route-header :title="$t('route.milonga')" />
     <!-- Индикатор загрузки рядом с селектором -->
     <div v-if="isLoading" class="absolute right-0 top-0 mr-2 mt-2">
       <icon icon="svg-spinners:180-ring" class="w-5 h-5 text-primary" />
     </div>
-    <div class="flex gap-2 mt-1 mr-2">
+    <div class="milonga-actions">
       <big-button
         class="flex gap-2"
         icon="mdi:dice-5"
@@ -158,37 +334,129 @@ onMounted(async () => {
       />
     </div>
 
-    <div class="flex flex-col overflow-y-auto gap-2 h-full pb-56">
-      <milonga-plan
-        :title="$t('milonga.plan.title')"
-        :subtitle="$t('milonga.plan.description')"
-        :tracks="milongaPlanTracks"
-        @tracks-updated="handleTracksUpdated"
-      />
+    <div
+      ref="workspaceElement"
+      class="milonga-workspace"
+      :class="{ 'is-resizing': isResizingWorkspace }"
+      :style="workspaceStyle"
+    >
+      <section class="milonga-plan-pane">
+        <milonga-plan
+          :title="$t('milonga.plan.title')"
+          :subtitle="$t('milonga.plan.description')"
+          :tracks="milongaPlanTracks"
+          :cortina-slots="milongaCortinaSlots"
+          :current-track-path="currentTrackPath"
+          @tracks-updated="handleTracksUpdated"
+          @cortina-slots-updated="handleCortinaSlotsUpdated"
+          @play-from-tanda-track="handleMilongaTandaTrackPlay"
+          @play-from-cortina="handleMilongaCortinaPlay"
+        />
+      </section>
 
-      <route-header :title="$t('milonga.trackSelector.title')">
-        <div class="relative">
-          <select
-            v-model="selectedMediaSource"
-            class="appearance-none bg-surface-700 text-text-title rounded-l-lg pl-3 pr-8 py-2 focus:outline-none cursor-pointer"
-            :disabled="isLoading"
-          >
-            <option
-              v-for="source in mediaSources" 
-              :key="source.id" 
-              :value="source.id"
+      <button
+        class="milonga-workspace-resizer"
+        title="Resize panels"
+        @mousedown="startWorkspaceResize"
+        @dblclick="resetWorkspaceResize"
+      >
+        <span />
+      </button>
+
+      <section class="milonga-library-pane">
+        <route-header :title="$t('milonga.trackSelector.title')">
+          <div class="relative">
+            <select
+              v-model="selectedMediaSource"
+              class="appearance-none bg-surface-700 text-text-title rounded-l-lg pl-3 pr-8 py-2 focus:outline-none cursor-pointer"
+              :disabled="isLoading"
             >
-              {{ source.name }}
-            </option>
-          </select>
-        </div>
+              <option
+                v-for="source in mediaSources"
+                :key="source.id"
+                :value="source.id"
+              >
+                {{ source.name }}
+              </option>
+            </select>
+          </div>
 
-        <search-input v-model="filterText" :disabled="isLoading"/>
-      </route-header>
-      <track-selector 
-        :external-columns="milongaColumns"
-        :on-column-update="handleMilongaColumnUpdate"
-      />
+          <search-input v-model="filterText" :disabled="isLoading"/>
+        </route-header>
+        <track-selector
+          class="milonga-track-selector"
+          :external-columns="milongaColumns"
+          :on-column-update="handleMilongaColumnUpdate"
+          :search-text="filterText"
+        />
+      </section>
     </div>
   </div>
 </template>
+
+<style scoped lang="postcss">
+.milonga-view {
+  @apply relative h-full w-full py-2 pl-4 pr-2 text-text-title flex flex-col overflow-hidden;
+}
+
+.milonga-actions {
+  @apply flex gap-2 mt-1 mr-2 flex-none;
+}
+
+.milonga-workspace {
+  @apply min-h-0 flex-1 grid gap-2 mt-3 pb-36 pr-2 overflow-hidden;
+  grid-template-columns: minmax(360px, var(--milonga-plan-size)) 10px minmax(420px, 1fr);
+}
+
+.milonga-plan-pane,
+.milonga-library-pane {
+  @apply min-h-0 rounded bg-surface-900/30;
+}
+
+.milonga-plan-pane {
+  @apply overflow-y-auto pr-1;
+}
+
+.milonga-library-pane {
+  @apply min-w-0 flex flex-col overflow-hidden;
+}
+
+.milonga-track-selector {
+  @apply flex-1 min-h-0 overflow-hidden;
+}
+
+.milonga-workspace-resizer {
+  @apply h-full w-10px flex items-center justify-center rounded cursor-ew-resize hover:bg-surface-700/70 transition-colors;
+}
+
+.milonga-workspace-resizer span {
+  @apply h-16 w-px bg-surface-500 pointer-events-none;
+}
+
+.milonga-workspace.is-resizing .milonga-workspace-resizer,
+.milonga-workspace-resizer:hover {
+  @apply bg-surface-700/70;
+}
+
+@media (max-width: 1180px) {
+  .milonga-workspace {
+    @apply grid-cols-1;
+    grid-template-rows: minmax(220px, var(--milonga-plan-size)) 10px minmax(280px, 1fr);
+    grid-template-columns: 1fr;
+  }
+
+  .milonga-workspace-resizer {
+    @apply h-10px w-full cursor-ns-resize;
+  }
+
+  .milonga-workspace-resizer span {
+    @apply h-px w-16;
+  }
+}
+</style>
+
+<style lang="postcss">
+.milonga-is-resizing {
+  @apply select-none;
+}
+</style>

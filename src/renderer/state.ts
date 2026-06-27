@@ -52,6 +52,7 @@ export interface IContextMenuOption {
 
 export interface StateEvents {
   "theme:change": string;
+  "view:refresh": string;
 }
 
 export class State extends EventEmitter<StateEvents> {

@@ -4,21 +4,28 @@ import { useLocalStorage } from "@vueuse/core";
 import type { Ref } from "vue";
 import { ref } from "vue";
 
-import type { Amethyst } from "@/amethyst.js";
+import { type Amethyst, amethyst } from "@/amethyst.js";
 import { fisherYatesShuffle } from "@/logic/math.js";
 import { Track } from "@/logic/track.js";
+
+import { MediaSourceType } from "./MediaSource/index.js";
 
 export const COMPARATORS_BY_METHOD = {
   default: () => 0,
   trackNumber: (a, b) => {
     const diskNumberDiff = (a.getDiskNumber() ?? 1) - (b.getDiskNumber() ?? 1);
     if (diskNumberDiff !== 0) return diskNumberDiff;
+    // delegate to copy of album comparator if the two tracks are not in the same album
+    if (a.getAlbum() !== b.getAlbum()) return (a.getAlbum() || "") > (b.getAlbum() || "") ? 1 : -1;
     return (a.getTrackNumber() ?? 1) - (b.getTrackNumber() ?? 1);
   },
   diskNumber: (a, b) => (a.getDiskNumber() ?? 1) > (b.getDiskNumber() ?? 1) ? 1 : -1,
   filename: (a, b) => (a.getFilename()) > (b.getFilename()) ? 1 : -1,
   title: (a, b) => (a.getTitle() || "") > (b.getTitle() || "") ? 1 : -1,
   artist: (a, b) => (a.getArtistsFormatted() || "") > (b.getArtistsFormatted() || "") ? 1 : -1,
+  playCount: (a, b) => (amethyst.analytics.getAnalytics(a).playCount) > (amethyst.analytics.getAnalytics(b).playCount) ? 1 : -1,
+  skipCount: (a, b) => (amethyst.analytics.getAnalytics(a).skipCount) > (amethyst.analytics.getAnalytics(b).skipCount) ? 1 : -1,
+  dateAdded: (a, b) => (amethyst.analytics.getAnalytics(a).dateAdded) > (amethyst.analytics.getAnalytics(b).dateAdded) ? 1 : -1,
   album: (a, b) => (a.getAlbum() || "") > (b.getAlbum() || "") ? 1 : -1,
   year: (a, b) => (a.getYear() || 0) > (b.getYear() || 0) ? 1 : -1,
   duration: (a, b) => (a.getDurationSeconds()) > (b.getDurationSeconds()) ? 1 : -1,
@@ -39,8 +46,10 @@ export const COMPARATORS_BY_METHOD = {
 export type PossibleSortingMethods = keyof typeof COMPARATORS_BY_METHOD;
 
 export class Queue {
-  private savedQueue = useLocalStorage<string[]>("queuev2", []);
+  private savedQueue = useLocalStorage<{ path: string; type: MediaSourceType }[]>("queuev2", []);
   private list: Ref<Map<string, Track>> = ref(new Map());
+  private lastSearch = "";
+  private lastSearchList: Track[] = [];
 
   public totalSize = ref(0);
   public totalDuration = ref(0);
@@ -48,9 +57,19 @@ export class Queue {
   public currentSortingDirection: Ref<"ascending" | "descending"> = ref("ascending");
 
   public constructor(private amethyst: Amethyst, paths?: string[]) {
-    paths
-      ? this.add(paths)
-      : this.add(this.savedQueue.value);
+    if (paths) this.add(paths);
+    else {
+      // load saved queue from local storage
+      this.savedQueue.value.forEach((item) => {
+        const track = new Track(this.amethyst, item.path);
+
+        if (item.type == MediaSourceType.Subsonic) {
+          track.sourceType = MediaSourceType.Subsonic;
+        }
+
+        this.add(track);
+      });
+    }
   }
 
   public getList() {
@@ -58,22 +77,11 @@ export class Queue {
   }
 
   public search(search: string) {
-    const words = search.split(" ");
-    let results = this.getList();
-
-    for (let i = 0; i < words.length; i++) {
-      const word = words[i].toLowerCase();
-      results = results
-        .filter((track) => word ? !track.hasErrored : track)
-        .filter((track) =>
-          track.getFilename().toLowerCase().includes(word)
-          || track.getArtistsFormatted()?.toLowerCase().includes(word)
-          || track.getTitle()?.toLowerCase().includes(word)
-          || track.getGenreFormatted()?.toLowerCase().includes(word)
-          || track.getAlbum()?.toLowerCase().includes(word));
-    }
-
-    return results;
+    const list = search.includes(this.lastSearch) ? this.lastSearchList : this.getList();
+    const searchedTracks = this.searchTracks(search, list);
+    this.lastSearchList = searchedTracks;
+    this.lastSearch = search;
+    return searchedTracks;
   }
 
   public searchTracks(search: string, tracks: Track[]) {
@@ -116,7 +124,7 @@ export class Queue {
    * Saves the current queue to local storage for persistance
    */
   private syncLocalStorage() {
-    this.savedQueue.value = this.getList().map((t) => t.absolutePath);
+    this.savedQueue.value = this.getList().map((t) => ({ path: t.absolutePath, type: t.sourceType }));
   }
 
   /**

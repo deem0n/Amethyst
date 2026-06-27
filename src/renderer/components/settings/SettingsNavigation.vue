@@ -34,6 +34,14 @@ defineProps<{
     icon="ic:twotone-psychology"
   />
   <settings-category
+    route-name="settings.milonga"
+    :title="$t('settings.milonga.title')"
+    :active="false"
+    :fullwidth-min="fullwidthMin"
+    :description="$t('settings.milonga.description')"
+    icon="mdi:dance-ballroom"
+  />
+  <settings-category
     route-name="settings.metering"
     :title="$t('settings.metering.title')"
     :active="false"
