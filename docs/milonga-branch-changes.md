@@ -31,6 +31,10 @@ Merge note: upstream may change Settings routing/navigation often. Keep Milonga 
 ## Milonga Creation Screen
 
 - `src/renderer/views/MilongaView.vue`: converted the screen into a split workspace with the Milonga plan and track selector visible at the same time.
+- Replaced the old placeholder action strip with a Milonga menu.
+- DJs can create, rename, select, and delete saved Milonga plans from the top menu.
+- Milonga plans persist in local storage as serializable track refs, cortina slot refs, and a per-Milonga cortina duration setting.
+- Each Milonga defaults its cortina duration from `settings.milonga.defaultCortinaDurationSeconds`; the top menu can override it per plan.
 - Added a draggable workspace splitter. Size persists in `milongaWorkspacePlanPaneSize`.
 - Added Milonga-local search wiring for the track selector.
 - Added runtime state for tanda tracks and cortina slots.
@@ -50,6 +54,8 @@ Merge note: if upstream replaces `TrackSelector`, keep the ability to pass exter
 - `src/renderer/components/MilongaPlan.vue`: changed tanda display from vertical lists to row-based tanda cards with up to four track slots.
 - Track cards now show cover art, duration overlay, title under image, and artist.
 - Empty tanda slots accept dropped tracks.
+- Tanda rows can be reordered by dragging the tanda handle; all four track slots move together.
+- Tanda rows can be removed as a four-track group, and individual tanda tracks can be cleared without changing the rest of the tanda.
 - Current playing track receives a visible highlight.
 
 Merge note: this component is fork-specific and can be moved toward the ADR domain model later. Avoid mixing it with normal queue UI unless upstream introduces reusable card primitives.
@@ -61,16 +67,20 @@ Merge note: this component is fork-specific and can be moved toward the ADR doma
   - `automatic`: resolves to a random loaded track from the Cortina Library during playback.
   - `manual`: DJ-assigned normal track.
 - Dropping a track onto a cortina slot assigns it manually.
-- Manual cortinas show cover/title/duration and can be reset to automatic.
+- Manual cortinas show cover/title/duration.
+- Cortinas can be set to `empty`; empty cortinas do not play and are not changed by automatic reassignment until switched back to `automatic`.
 
 ## Cortina Library
 
-- `src/renderer/logic/milonga.ts`: model and helpers for serializable Milonga track references and cortina library entries.
+- `src/renderer/logic/milonga.ts`: model and helpers for serializable Milonga track references, cortina library entries, and named cortina sets.
 - `src/renderer/views/MilongaView.vue`: added Cortina Library panel above the track selector.
-- Tracks can be dragged from the Milonga track selector into the Cortina Library.
+- DJs can create, rename, select, and delete named cortina sets, for example `Michael Jackson`, `70s`, or `guitar`, then switch the active set for automatic cortina assignment.
+- Tracks can be dragged from the Milonga track selector into the active Cortina Library set.
+- Tracks inside a Cortina Library set can be reordered by drag-and-drop; set-order fill uses this order.
 - Cortina Library entries persist in local storage as track refs and metadata snapshots, not live `Track` objects.
-- Entries are resolved against currently loaded Milonga candidate tracks for display and playback.
-- Missing entries remain visible as "Not loaded from current source" so the DJ can detect source/filter mismatches.
+- Entries are resolved against the normal queue track list first, then Milonga candidate tracks as a fallback, so the Cortina Pool uses the same library as the Queue screen.
+- Missing entries remain visible as "Not loaded from current source" only when neither queue tracks nor fallback candidate tracks can resolve the saved file ref.
+- The old flat `milongaCortinaLibrary` storage key is read only to seed the first `Default` set for local development data.
 
 Merge note: keep cortina library storage separate from the normal queue. It is Milonga-specific planning state and should later become part of `.milonga.m3u8` import/export.
 
@@ -79,7 +89,10 @@ Merge note: keep cortina library storage separate from the normal queue. It is M
 - `src/renderer/views/MilongaView.vue`: clicking a tanda track builds a Milonga playback sequence from that point forward.
 - Playback advances through remaining tanda tracks.
 - Manual cortinas between tandas are included in the sequence.
-- Automatic cortinas are resolved randomly from the Cortina Library when the playback sequence is built.
+- Automatic cortinas can be prefilled from the active Cortina Library set in random order or set order. Random fill shuffles the set and avoids repeats until the set is exhausted; set-order fill cycles when there are more automatic cortina slots than set tracks.
+- Reassign buttons only update cortina slots still marked `automatic`; cortinas marked `manual` are preserved.
+- Reassign buttons require at least one pool track resolved from the currently loaded Milonga candidate tracks. The UI shows loaded-vs-total pool counts when saved pool entries are not available from the current source.
+- Automatic cortinas with no prefilled track are resolved randomly from the active Cortina Library set when the playback sequence is built.
 - Clicking a manual cortina starts playback at that cortina, then continues into following tandas.
 - Playback highlight follows `player:trackChange`, clears on pause/stop, and stops owning playback if another track is started outside the Milonga sequence.
 
@@ -96,7 +109,11 @@ Merge note: this is the only current general-player change. If upstream changes 
 - `milongaTrackSelectorMediaSource`
 - `milongaTrackSelectorColumns`
 - `milongaWorkspacePlanPaneSize`
-- `milongaCortinaLibrary`
+- `milongaPlans`
+- `milongaActivePlanId`
+- `milongaCortinaSets`
+- `milongaActiveCortinaSetId`
+- `milongaCortinaLibrary` (legacy seed only)
 
 ## Merge Checklist
 
@@ -109,9 +126,13 @@ Merge note: this is the only current general-player change. If upstream changes 
    - Plan and track selector are both visible.
    - Splitter resizes panes.
    - Tracks can be dropped into tanda slots.
-   - Tracks can be dropped into the Cortina Library.
+   - Cortina Library sets can be created, renamed, selected, and deleted.
+   - Tracks can be dropped into the active Cortina Library set.
+   - Cortina Library tracks can be reordered by drag-and-drop.
+   - Automatic cortinas can be filled in random and set order without changing manual cortinas.
    - Tracks can be dropped into cortina slots.
+   - Each cortina can be toggled between automatic and manual mode.
    - Clicking a tanda track advances to the next tanda track.
    - Manual cortina plays between tandas.
-   - Automatic cortina plays from the Cortina Library between tandas.
+   - Automatic cortina plays from the active Cortina Library set between tandas.
    - Currently playing Milonga item is highlighted.

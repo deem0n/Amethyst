@@ -22,10 +22,10 @@ Build Milonga support as dedicated creation and playback modes that reuse Amethy
 
 Cortinas will be modeled as normal Amethyst tracks with Milonga-specific slot behavior. A cortina slot always resolves to a track before playback. It has two assignment modes:
 
-- Automatic: choose a track from the configured cortina pool at playback time and apply the default cortina filter, for example play the first 30 seconds with fade-in and fade-out.
+- Automatic: choose a track from the active configured cortina set at playback time and apply the default cortina filter, for example play the first 30 seconds with fade-in and fade-out.
 - Manual: use the specific track assigned by the DJ for that cortina slot. Manual assignment bypasses random pool selection, but still applies the cortina filter unless the slot has an explicit override.
 
-The cortina pool is a set of normal tracks selected by the DJ as eligible cortinas. Pool tracks are not duplicated or converted into a separate media type.
+The cortina library contains named sets of normal tracks selected by the DJ as eligible cortinas, for example `Michael Jackson`, `70s`, or `guitar`. The active set is used for automatic cortina assignment, while manual slot assignment can still force a specific track. Pool tracks are not duplicated or converted into a separate media type.
 
 This avoids forking the whole queue model immediately, while still allowing Milonga-specific UX and data structures to mature independently.
 
@@ -35,7 +35,7 @@ Milonga playlists will use an extended M3U8-based format with a custom extension
 
 - Plan an evening as ordered tandas with configurable size, style, orchestra, singer, year, BPM, and duration cues.
 - Support cortinas as first-class separators between tandas, backed by normal Amethyst tracks plus cortina playback filters.
-- Let the DJ maintain a cortina pool for automatic cortina selection and manually assign a specific cortina track to any cortina slot.
+- Let the DJ maintain named cortina sets for automatic cortina selection and manually assign a specific cortina track to any cortina slot.
 - Let the DJ search and filter candidate tracks from configured media sources without disrupting playback.
 - Let the DJ build and rearrange the plan with drag-and-drop between candidate tracks, tanda slots, cortina slots, and existing plan positions.
 - Persist, reload, duplicate, export, and import Milonga plans.
@@ -52,14 +52,14 @@ Milonga playlists will use an extended M3U8-based format with a custom extension
 
 ## Implementation Tasks
 
-1. Define Milonga domain types in `src/shared` or a new renderer module: `MilongaPlan`, `Tanda`, `CortinaSlot`, `CortinaPool`, `CortinaFilter`, `MilongaSlot`, and validation errors. `CortinaSlot` must support `automatic` and `manual` assignment modes.
+1. Define Milonga domain types in `src/shared` or a new renderer module: `MilongaPlan`, `Tanda`, `CortinaSlot`, `CortinaLibrary`, `CortinaSet`, `CortinaFilter`, `MilongaSlot`, and validation errors. `CortinaSlot` must support `automatic` and `manual` assignment modes.
 2. Split the current Milonga screen responsibilities into Milonga Creation and Milonga Playback flows while reusing shared components where practical.
 3. Replace the flat `Track[]` plan in `MilongaPlan.vue` with structured tanda/cortina state and explicit empty slots.
-4. Add cortina-pool editing: add/remove normal tracks, preview cortinas, and mark pool tracks as eligible for random slot selection.
+4. Add cortina-library editing: create/rename/delete named sets, add/remove normal tracks, preview cortinas, and select the active set for random slot selection.
 5. Add default cortina filter settings: start offset, play duration, fade-in duration, fade-out duration, and optional per-slot overrides.
 6. Add persistence using `.milonga.m3u8` import/export, with local storage only for autosave and draft recovery.
 7. Add plan editing controls: create tanda, insert cortina slot, assign cortina track manually, switch cortina slot back to automatic, reorder slots, remove slot, duplicate tanda, and lock completed tandas.
-8. Implement drag-and-drop planning: drag candidate tracks into tanda slots, drag tracks into the cortina pool, manually assign cortinas by dropping onto cortina slots, and reorder tandas, tracks, and cortina slots without accidental playback.
+8. Implement drag-and-drop planning: drag candidate tracks into tanda slots, drag tracks into the active cortina set, manually assign cortinas by dropping onto cortina slots, and reorder tandas, tracks, and cortina slots without accidental playback.
 9. Improve candidate-track search using existing media sources plus filters for genre/style, orchestra/artist, singer, year range, BPM, duration, favorites, and source.
 10. Add metadata normalization for Tango-specific fields, starting with configurable mappings from existing tags such as artist, album artist, genre, grouping, year, and BPM.
 11. Add tanda-style detection that infers `tango`, `vals`, or `milonga` from normalized metadata where possible, with manual override.
@@ -76,16 +76,16 @@ Milonga playlists will use an extended M3U8-based format with a custom extension
 - Existing Milonga screen is organized as Creation mode.
 - Structured plan model exists.
 - Tandas and cortinas can be created, edited, reordered, and persisted locally.
-- Cortina pool and default cortina filter settings can be edited.
+- Cortina library sets and default cortina filter settings can be edited.
 - Existing candidate selector can add tracks into explicit slots.
-- Drag-and-drop works for adding tracks, moving tracks between slots, adding tracks to the cortina pool, assigning cortinas manually, and reordering unplayed plan sections.
+- Drag-and-drop works for adding tracks, moving tracks between slots, adding tracks to the active cortina set, assigning cortinas manually, and reordering unplayed plan sections.
 - `.milonga.m3u8` export/import works for the structured plan.
 
 ### M2: Playback Integration
 
 - The DJ can start playback from a selected slot.
 - Playback advances through the plan automatically and predictably.
-- Automatic cortina slots choose from the cortina pool and apply the default cortina filter.
+- Automatic cortina slots choose from the active cortina set and apply the default cortina filter.
 - Manual cortina slots play the assigned track at that position.
 - The UI distinguishes planned playback from normal queue playback.
 - Playback mode shows current tanda, track counter, style, remaining Milonga time, and expected astronomical finish time.
@@ -111,7 +111,7 @@ The Milonga feature will have its own domain model instead of overloading the qu
 ## Open Questions
 
 - Should cortina randomization avoid repeats until the full cortina pool has been used?
-- Should cortina pools be global settings, stored per plan, or both?
+- Should cortina sets be global settings, stored per plan, or both?
 - Should Tango style be stored as a normalized enum (`tango`, `vals`, `milonga`, `alternative`) or as free-form tags?
 - Should target-end-time cutting default to shortening cortinas first, dropping tandas first, or always asking the DJ?
 - What is the minimum allowed cortina duration during automatic time cuts?

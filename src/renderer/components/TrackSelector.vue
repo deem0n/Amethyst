@@ -31,6 +31,7 @@ const props = defineProps<{
   externalColumns?: Record<ColumnKey, boolean>;
   onColumnUpdate?: (key: ColumnKey, value: boolean) => void;
   searchText?: string;
+  sourceTracks?: Track[];
 }>();
 
 // Используем внешние колонки если переданы, иначе стандартные
@@ -56,14 +57,15 @@ watchEffect(async () => {
 // FIXME: Got it from logic/queue.ts but we have no similar file for track selector
 function getListSorted(sortBy: PossibleSortingMethods, search?: string) {
     const normalizedSearch = search?.trim().toLowerCase();
+    const sourceTracks = props.sourceTracks ?? amethyst.state.milongaCandidateTracks;
     const candidates = normalizedSearch
-      ? amethyst.state.milongaCandidateTracks.filter((track) =>
+      ? sourceTracks.filter((track) =>
         track.getTitle()?.toLowerCase().includes(normalizedSearch)
         || track.getArtistsFormatted()?.toLowerCase().includes(normalizedSearch)
         || track.getAlbum()?.toLowerCase().includes(normalizedSearch)
         || track.getFilename()?.toLowerCase().includes(normalizedSearch)
       )
-      : amethyst.state.milongaCandidateTracks;
+      : sourceTracks;
     const sorted = [...candidates];
     sorted.sort(COMPARATORS_BY_METHOD[sortBy]);
     if (trackSelectorSortDirection.value === "descending") {

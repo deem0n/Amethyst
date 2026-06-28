@@ -88,7 +88,15 @@ const DEFAULT_BEHAVIOR_SETTINGS = {
   behavior: {
     autoPlayOnStartup: false,
     fetchMetadataOnStartup: true,
-    milonga: false
+    milonga: false,
+  },
+};
+
+const DEFAULT_MILONGA_SETTINGS = {
+  milonga: {
+    defaultCortinaDurationSeconds: 30,
+    defaultCortinaFadeInSeconds: 2,
+    defaultCortinaFadeOutSeconds: 2,
   },
 };
 
@@ -254,6 +262,7 @@ const DEFAULT_SETTINGS = {
   ...DEFAULT_APPEARANCE_SETTINGS,
   ...DEFAULT_PERFORMANCE_SETTINGS,
   ...DEFAULT_BEHAVIOR_SETTINGS,
+  ...DEFAULT_MILONGA_SETTINGS,
   ...DEFAULT_METERING_SETTINGS,
   ...DEFAULT_AUDIO_SETTINGS,
   ...DEFAULT_INTEGRATION_SETTINGS,
