@@ -58,18 +58,28 @@ Merge note: this component is fork-specific and can be moved toward the ADR doma
 
 - `src/renderer/components/MilongaPlan.vue`: cortina separators are now real slots between tandas.
 - Cortina slot modes:
-  - `automatic`: placeholder for future pool-based selection.
+  - `automatic`: resolves to a random loaded track from the Cortina Library during playback.
   - `manual`: DJ-assigned normal track.
 - Dropping a track onto a cortina slot assigns it manually.
 - Manual cortinas show cover/title/duration and can be reset to automatic.
 
-Current limitation: automatic cortina pool selection is documented but not implemented yet.
+## Cortina Library
+
+- `src/renderer/logic/milonga.ts`: model and helpers for serializable Milonga track references and cortina library entries.
+- `src/renderer/views/MilongaView.vue`: added Cortina Library panel above the track selector.
+- Tracks can be dragged from the Milonga track selector into the Cortina Library.
+- Cortina Library entries persist in local storage as track refs and metadata snapshots, not live `Track` objects.
+- Entries are resolved against currently loaded Milonga candidate tracks for display and playback.
+- Missing entries remain visible as "Not loaded from current source" so the DJ can detect source/filter mismatches.
+
+Merge note: keep cortina library storage separate from the normal queue. It is Milonga-specific planning state and should later become part of `.milonga.m3u8` import/export.
 
 ## Milonga Playback Prototype
 
 - `src/renderer/views/MilongaView.vue`: clicking a tanda track builds a Milonga playback sequence from that point forward.
 - Playback advances through remaining tanda tracks.
 - Manual cortinas between tandas are included in the sequence.
+- Automatic cortinas are resolved randomly from the Cortina Library when the playback sequence is built.
 - Clicking a manual cortina starts playback at that cortina, then continues into following tandas.
 - Playback highlight follows `player:trackChange`, clears on pause/stop, and stops owning playback if another track is started outside the Milonga sequence.
 
@@ -86,6 +96,7 @@ Merge note: this is the only current general-player change. If upstream changes 
 - `milongaTrackSelectorMediaSource`
 - `milongaTrackSelectorColumns`
 - `milongaWorkspacePlanPaneSize`
+- `milongaCortinaLibrary`
 
 ## Merge Checklist
 
@@ -98,7 +109,9 @@ Merge note: this is the only current general-player change. If upstream changes 
    - Plan and track selector are both visible.
    - Splitter resizes panes.
    - Tracks can be dropped into tanda slots.
+   - Tracks can be dropped into the Cortina Library.
    - Tracks can be dropped into cortina slots.
    - Clicking a tanda track advances to the next tanda track.
    - Manual cortina plays between tandas.
+   - Automatic cortina plays from the Cortina Library between tandas.
    - Currently playing Milonga item is highlighted.

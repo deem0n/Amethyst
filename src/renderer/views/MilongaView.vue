@@ -4,8 +4,16 @@ import { onBeforeUnmount, onMounted, computed, ref, watch  } from "vue";
 
 import { amethyst } from "@/amethyst.js";
 import BigButton from "@/components/BigButton.vue";
+import CoverArt from "@/components/CoverArt.vue";
 import MilongaPlan, { type CortinaSlot } from "@/components/MilongaPlan.vue";
 import RouteHeader from "@/components/v2/RouteHeader.vue";
+import {
+  createCortinaLibraryEntry,
+  type CortinaLibraryEntry,
+  isSameMilongaTrackRef,
+  resolveMilongaTrackRef,
+  trackToMilongaTrackRef
+} from "@/logic/milonga";
 
 // By Dima
 import TrackSelector from "@/components/TrackSelector.vue";
@@ -26,6 +34,7 @@ const mediaSources = computed(() => [
 const filterText = useLocalStorage("milongaTrackSelectorFilterText", "");
 const selectedMediaSource = useLocalStorage("milongaTrackSelectorMediaSource", "All");
 const planPaneSize = useLocalStorage("milongaWorkspacePlanPaneSize", 42);
+const cortinaLibrary = useLocalStorage<CortinaLibraryEntry[]>("milongaCortinaLibrary", []);
 const workspaceElement = ref<HTMLElement | null>(null);
 const isResizingWorkspace = ref(false);
 const currentTrackPath = ref<string>();
@@ -106,6 +115,65 @@ const handleMilongaColumnUpdate = (key: MilongaColumnKey, value: boolean) => {
   milongaColumns.value[key] = value;
 };
 
+const getTrackFromDragEvent = (event: DragEvent): Track | null => {
+  const jsonData = event.dataTransfer?.getData("application/json");
+  if (jsonData) {
+    try {
+      const trackData = JSON.parse(jsonData);
+      if (trackData.type === "amethyst/track") {
+        return amethyst.state.milongaCandidateTracks.find((track) =>
+          track.absolutePath === trackData.absolutePath
+          || track.path === trackData.path) ?? null;
+      }
+    }
+    catch (error) {
+      console.error("Error parsing cortina library drop data:", error);
+    }
+  }
+
+  const pathData = event.dataTransfer?.getData("text/plain");
+  if (pathData) {
+    return amethyst.state.milongaCandidateTracks.find((track) =>
+      track.absolutePath === pathData
+      || track.path === pathData) ?? null;
+  }
+
+  return null;
+};
+
+const resolvedCortinaLibrary = computed(() => cortinaLibrary.value.map((entry) => ({
+  entry,
+  track: resolveMilongaTrackRef(entry.track, amethyst.state.milongaCandidateTracks),
+})));
+
+const addCortinaLibraryTrack = (track: Track) => {
+  const trackRef = trackToMilongaTrackRef(track);
+  const alreadyExists = cortinaLibrary.value.some((entry) =>
+    isSameMilongaTrackRef(entry.track, trackRef)
+  );
+
+  if (!alreadyExists) {
+    cortinaLibrary.value = [...cortinaLibrary.value, createCortinaLibraryEntry(track)];
+  }
+};
+
+const removeCortinaLibraryEntry = (entryToRemove: CortinaLibraryEntry) => {
+  cortinaLibrary.value = cortinaLibrary.value.filter((entry) =>
+    !isSameMilongaTrackRef(entry.track, entryToRemove.track)
+  );
+};
+
+const handleCortinaLibraryDragOver = (event: DragEvent) => {
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+};
+
+const handleCortinaLibraryDrop = (event: DragEvent) => {
+  event.preventDefault();
+  const track = getTrackFromDragEvent(event);
+  if (track) addCortinaLibraryTrack(track);
+};
+
 // Реакция на выбор источника
 watch(selectedMediaSource, async (newSourceId) => {
   isLoading.value = true;
@@ -166,6 +234,20 @@ const getManualCortinaTrack = (cortinaIndex: number) => {
   return slot?.mode === "manual" ? slot.track : null;
 };
 
+const getAutomaticCortinaTrack = () => {
+  const tracks = resolvedCortinaLibrary.value
+    .map(({ track }) => track)
+    .filter((track): track is Track => !!track);
+
+  if (tracks.length === 0) return null;
+  return tracks[Math.floor(Math.random() * tracks.length)];
+};
+
+const getCortinaPlaybackTrack = (cortinaIndex: number) => {
+  const manualTrack = getManualCortinaTrack(cortinaIndex);
+  return manualTrack ?? getAutomaticCortinaTrack();
+};
+
 const buildMilongaSequenceFromTandaTrack = (startTandaIndex: number, startPosition: number) => {
   const sequence: Track[] = [];
   const tandaCount = Math.ceil(milongaPlanTracks.value.length / 4);
@@ -178,7 +260,7 @@ const buildMilongaSequenceFromTandaTrack = (startTandaIndex: number, startPositi
       if (track) sequence.push(track);
     }
 
-    const cortinaTrack = getManualCortinaTrack(tandaIndex);
+    const cortinaTrack = getCortinaPlaybackTrack(tandaIndex);
     if (cortinaTrack) sequence.push(cortinaTrack);
   }
 
@@ -187,7 +269,7 @@ const buildMilongaSequenceFromTandaTrack = (startTandaIndex: number, startPositi
 
 const buildMilongaSequenceFromCortina = (cortinaIndex: number) => {
   const sequence: Track[] = [];
-  const cortinaTrack = getManualCortinaTrack(cortinaIndex);
+  const cortinaTrack = getCortinaPlaybackTrack(cortinaIndex);
   if (cortinaTrack) sequence.push(cortinaTrack);
 
   const nextTandaSequence = buildMilongaSequenceFromTandaTrack(cortinaIndex + 1, 0);
@@ -347,6 +429,7 @@ onBeforeUnmount(() => {
           :tracks="milongaPlanTracks"
           :cortina-slots="milongaCortinaSlots"
           :current-track-path="currentTrackPath"
+          :cortina-library-size="cortinaLibrary.length"
           @tracks-updated="handleTracksUpdated"
           @cortina-slots-updated="handleCortinaSlotsUpdated"
           @play-from-tanda-track="handleMilongaTandaTrackPlay"
@@ -364,6 +447,78 @@ onBeforeUnmount(() => {
       </button>
 
       <section class="milonga-library-pane">
+        <section
+          class="cortina-library"
+          @dragover="handleCortinaLibraryDragOver"
+          @drop="handleCortinaLibraryDrop"
+        >
+          <div class="cortina-library-header">
+            <div>
+              <div class="cortina-library-title">
+                Cortina Library
+              </div>
+              <div class="cortina-library-subtitle">
+                {{ cortinaLibrary.length }} tracks for automatic cortinas
+              </div>
+            </div>
+            <div class="cortina-library-drop-hint">
+              Drop tracks here
+            </div>
+          </div>
+
+          <div
+            v-if="cortinaLibrary.length === 0"
+            class="cortina-library-empty"
+          >
+            Drag cortina tracks from the track selector into this area.
+          </div>
+
+          <div
+            v-else
+            class="cortina-library-list"
+          >
+            <div
+              v-for="{ entry, track } in resolvedCortinaLibrary"
+              :key="`${entry.track.sourceUuid || 'source'}:${entry.track.path}`"
+              class="cortina-library-item"
+              :class="{ 'is-missing': !track }"
+            >
+              <div class="cortina-library-cover">
+                <cover-art
+                  v-if="track?.isLoaded && track.getCover()"
+                  class="w-full h-full rounded"
+                  :url="track.getCover()"
+                />
+                <icon
+                  v-else
+                  icon="ic:outline-music-note"
+                  class="w-5 h-5 text-text-subtitle"
+                />
+              </div>
+              <div class="cortina-library-copy">
+                <div class="cortina-library-track-title">
+                  {{ track?.getTitle() || entry.title || entry.track.path }}
+                </div>
+                <div class="cortina-library-track-meta">
+                  <template v-if="track">
+                    {{ track.getArtistsFormatted() || "n/a" }} · {{ track.getDurationFormatted(true) || "--:--" }}
+                  </template>
+                  <template v-else>
+                    Not loaded from current source
+                  </template>
+                </div>
+              </div>
+              <button
+                class="cortina-library-remove"
+                title="Remove from cortina library"
+                @click="removeCortinaLibraryEntry(entry)"
+              >
+                <icon icon="ic:round-close" class="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </section>
+
         <route-header :title="$t('milonga.trackSelector.title')">
           <div class="relative">
             <select
@@ -423,6 +578,62 @@ onBeforeUnmount(() => {
 
 .milonga-track-selector {
   @apply flex-1 min-h-0 overflow-hidden;
+}
+
+.cortina-library {
+  @apply flex-none rounded bg-surface-800/80 border border-surface-700 p-3 mb-2;
+}
+
+.cortina-library-header {
+  @apply flex items-start justify-between gap-3;
+}
+
+.cortina-library-title {
+  @apply text-text-title text-sm font-semibold;
+}
+
+.cortina-library-subtitle {
+  @apply text-text-subtitle text-xs;
+}
+
+.cortina-library-drop-hint {
+  @apply rounded bg-surface-700 px-2 py-1 text-xs text-text-subtitle whitespace-nowrap;
+}
+
+.cortina-library-empty {
+  @apply mt-3 rounded border border-dashed border-surface-600 px-3 py-4 text-center text-text-subtitle text-xs;
+}
+
+.cortina-library-list {
+  @apply mt-3 grid grid-cols-1 2xl:grid-cols-2 gap-2 max-h-44 overflow-y-auto pr-1;
+}
+
+.cortina-library-item {
+  @apply grid grid-cols-[36px_minmax(0,1fr)_24px] items-center gap-2 rounded bg-surface-900/60 p-2 border border-transparent;
+}
+
+.cortina-library-item.is-missing {
+  @apply border-yellow-500/40;
+}
+
+.cortina-library-cover {
+  @apply w-9 h-9 rounded bg-surface-600 flex items-center justify-center;
+}
+
+.cortina-library-copy {
+  @apply min-w-0;
+}
+
+.cortina-library-track-title {
+  @apply text-text-title text-xs font-medium truncate;
+}
+
+.cortina-library-track-meta {
+  @apply text-text-subtitle text-xs truncate;
+}
+
+.cortina-library-remove {
+  @apply w-6 h-6 flex items-center justify-center rounded text-text-subtitle hover:bg-surface-600 hover:text-text-title;
 }
 
 .milonga-workspace-resizer {

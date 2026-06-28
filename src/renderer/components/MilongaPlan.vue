@@ -21,6 +21,7 @@ const props = defineProps<{
   tracks: PlanTrack[];
   cortinaSlots: CortinaSlot[];
   currentTrackPath?: string;
+  cortinaLibrarySize: number;
 }>();
 
 const emit = defineEmits<{
@@ -344,7 +345,12 @@ const addNewTanda = () => {
                 Automatic cortina
               </div>
               <div class="cortina-meta">
-                Drop a track here to assign manually
+                <template v-if="cortinaLibrarySize > 0">
+                  Random from {{ cortinaLibrarySize }} library tracks
+                </template>
+                <template v-else>
+                  Drop tracks into Cortina Library or assign manually
+                </template>
               </div>
             </div>
           </div>

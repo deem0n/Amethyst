@@ -82,7 +82,7 @@ const handleColumnContextMenu = ({ x, y }: MouseEvent) => {
 
   const menuItems: IContextMenuOption[] = columnOptions.map(({ key, title }) => ({
     title,
-    icon: columns[key] ? "ic:twotone-radio-button-checked" : "ic:twotone-radio-button-unchecked",
+    icon: columns[key] ? "ic:twotone-check-box" : "ic:twotone-check-box-outline-blank",
     action: () => columns[key] = !columns[key],
   }));
 
