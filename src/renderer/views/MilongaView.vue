@@ -3,9 +3,9 @@ import { Icon as IconifyIcon } from "@iconify/vue";
 import { useLocalStorage } from "@vueuse/core";
 import { onBeforeUnmount, onMounted, computed, ref, watch } from "vue";
 
-import { amethyst } from "@/amethyst.js";
+import { amethyst, i18n } from "@/amethyst.js";
 import CoverArt from "@/components/CoverArt.vue";
-import MilongaPlan, { type CortinaEffectState, type CortinaSlot } from "@/components/MilongaPlan.vue";
+import MilongaPlan, { type CortinaDurationState, type CortinaEffectState, type CortinaSlot } from "@/components/MilongaPlan.vue";
 import RouteHeader from "@/components/v2/RouteHeader.vue";
 import {
   createCortinaLibraryEntry,
@@ -61,6 +61,7 @@ const workspaceElement = ref<HTMLElement | null>(null);
 const isResizingWorkspace = ref(false);
 const currentTrackPath = ref<string>();
 const activeCortinaEffect = ref<CortinaEffectState>();
+const activeCortinaDuration = ref<CortinaDurationState>();
 const milongaPlaybackSequence = ref<MilongaPlaybackEntry[]>([]);
 const milongaPlaybackIndex = ref(-1);
 let cortinaAdvanceTimeout: ReturnType<typeof window.setTimeout> | undefined;
@@ -68,6 +69,7 @@ let cortinaFadeInTimeout: ReturnType<typeof window.setTimeout> | undefined;
 let cortinaFadeOutTimeout: ReturnType<typeof window.setTimeout> | undefined;
 let cortinaFadeOutSilenceTimeout: ReturnType<typeof window.setTimeout> | undefined;
 let cortinaEffectProgressInterval: ReturnType<typeof window.setInterval> | undefined;
+let cortinaDurationProgressInterval: ReturnType<typeof window.setInterval> | undefined;
 let cortinaPlayTimeout: ReturnType<typeof window.setTimeout> | undefined;
 
 const milongaLibraryTracks = computed(() => {
@@ -176,6 +178,7 @@ const selectedMilongaCortinaFadeInSeconds = computed(() =>
 const selectedMilongaCortinaFadeOutSeconds = computed(() =>
   activeMilongaPlan.value?.cortinaFadeOutSeconds ?? globalDefaultCortinaFadeOutSeconds.value,
 );
+const defaultCumparsitaTitle = computed(() => i18n.global.t("milonga.cortina_pool.default_set_name"));
 const normalizedMilongaPlanNameInput = computed(() => milongaPlanNameInput.value.trim());
 const normalizedMilongaPlanNameKey = computed(() => normalizedMilongaPlanNameInput.value.toLocaleLowerCase());
 const activeMilongaPlanNameKey = computed(() => activeMilongaPlan.value?.name.trim().toLocaleLowerCase() ?? "");
@@ -319,6 +322,33 @@ const clearCortinaEffectProgress = () => {
   activeCortinaEffect.value = undefined;
 };
 
+const clearCortinaDurationProgress = () => {
+  if (cortinaDurationProgressInterval) window.clearInterval(cortinaDurationProgressInterval);
+  cortinaDurationProgressInterval = undefined;
+  activeCortinaDuration.value = undefined;
+};
+
+const startCortinaDurationProgress = (cortinaIndex: number, durationSeconds: number) => {
+  clearCortinaDurationProgress();
+
+  const startTime = performance.now();
+  const durationMs = Math.max(1, durationSeconds * 1000);
+
+  const updateProgress = () => {
+    const progress = Math.min(1, (performance.now() - startTime) / durationMs);
+    activeCortinaDuration.value = {
+      cortinaIndex,
+      durationSeconds,
+      progress,
+    };
+
+    if (progress >= 1) clearCortinaDurationProgress();
+  };
+
+  updateProgress();
+  cortinaDurationProgressInterval = window.setInterval(updateProgress, 100);
+};
+
 const startCortinaEffectProgress = (
   cortinaIndex: number,
   phase: CortinaEffectState["phase"],
@@ -364,6 +394,7 @@ const clearCortinaPlaybackEnvelope = () => {
   cortinaFadeOutSilenceTimeout = undefined;
   cortinaPlayTimeout = undefined;
   clearCortinaEffectProgress();
+  clearCortinaDurationProgress();
 
   const gain = amethyst.player.nodeManager.master.post.gain;
   gain.cancelScheduledValues(amethyst.player.context.currentTime);
@@ -415,6 +446,9 @@ const applyCortinaPlaybackEnvelope = (entry: MilongaPlaybackEntry) => {
   const startCortinaPlayback = () => {
     cortinaPlayTimeout = undefined;
     amethyst.player.play(entry.track);
+    if (entry.cortinaIndex !== undefined) {
+      startCortinaDurationProgress(entry.cortinaIndex, durationSeconds);
+    }
   };
 
   if (fadeInAddedSeconds > 0) {
@@ -464,13 +498,21 @@ const updateActiveMilongaCortinaFadeOut = (event: Event) => {
 
 const ensureCortinaSets = () => {
   if (cortinaSets.value.length > 0) {
+    if (cortinaSets.value.some((set) => set.name.trim() === "Default")) {
+      cortinaSets.value = cortinaSets.value.map((set) =>
+        set.name.trim() === "Default"
+          ? { ...set, name: defaultCumparsitaTitle.value, updatedAt: Date.now() }
+          : set,
+      );
+    }
+
     if (!cortinaSets.value.some((set) => set.id === activeCortinaSetId.value)) {
       activeCortinaSetId.value = cortinaSets.value[0]?.id ?? "";
     }
     return;
   }
 
-  const defaultSet = createCortinaLibrarySet("Default", legacyCortinaLibrary.value);
+  const defaultSet = createCortinaLibrarySet(defaultCumparsitaTitle.value, legacyCortinaLibrary.value);
   cortinaSets.value = [defaultSet];
   activeCortinaSetId.value = defaultSet.id;
 };
@@ -995,19 +1037,6 @@ onBeforeUnmount(() => {
           </select>
 
           <label class="milonga-cortina-duration">
-            <span>Cortina</span>
-            <input
-              :value="activeMilongaPlan?.cortinaDurationSeconds ?? globalDefaultCortinaDurationSeconds"
-              type="number"
-              min="5"
-              max="600"
-              step="5"
-              @change="updateActiveMilongaCortinaDuration"
-            >
-            <span>s</span>
-          </label>
-
-          <label class="milonga-cortina-duration">
             <span>In</span>
             <input
               :value="selectedMilongaCortinaFadeInSeconds"
@@ -1016,6 +1045,19 @@ onBeforeUnmount(() => {
               max="30"
               step="0.5"
               @change="updateActiveMilongaCortinaFadeIn"
+            >
+            <span>s</span>
+          </label>
+
+          <label class="milonga-cortina-duration">
+            <span>Cortina</span>
+            <input
+              :value="activeMilongaPlan?.cortinaDurationSeconds ?? globalDefaultCortinaDurationSeconds"
+              type="number"
+              min="5"
+              max="600"
+              step="5"
+              @change="updateActiveMilongaCortinaDuration"
             >
             <span>s</span>
           </label>
@@ -1103,6 +1145,7 @@ onBeforeUnmount(() => {
           :current-track-path="currentTrackPath"
           :cortina-library-size="activeCortinaEntries.length"
           :active-cortina-effect="activeCortinaEffect"
+          :active-cortina-duration="activeCortinaDuration"
           :default-cortina-duration-seconds="activeMilongaPlan?.cortinaDurationSeconds ?? globalDefaultCortinaDurationSeconds"
           :default-cortina-fade-in-seconds="selectedMilongaCortinaFadeInSeconds"
           :default-cortina-fade-out-seconds="selectedMilongaCortinaFadeOutSeconds"
@@ -1205,7 +1248,7 @@ onBeforeUnmount(() => {
             v-if="activeCortinaEntries.length === 0"
             class="cortina-library-empty"
           >
-            Drag tracks into "{{ activeCortinaSet?.name || 'Default' }}" to use them for automatic cortinas.
+            {{ $t("milonga.cortina_pool.empty", { name: activeCortinaSet?.name || $t("milonga.cortina_pool.default_set_name") }) }}
           </div>
 
           <div

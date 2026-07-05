@@ -26,6 +26,11 @@ export type CortinaEffectState = {
   durationSeconds: number;
   progress: number;
 };
+export type CortinaDurationState = {
+  cortinaIndex: number;
+  durationSeconds: number;
+  progress: number;
+};
 
 const props = defineProps<{
   title: string;
@@ -36,6 +41,7 @@ const props = defineProps<{
   currentTrackPath?: string;
   cortinaLibrarySize: number;
   activeCortinaEffect?: CortinaEffectState;
+  activeCortinaDuration?: CortinaDurationState;
   defaultCortinaDurationSeconds: number;
   defaultCortinaFadeInSeconds: number;
   defaultCortinaFadeOutSeconds: number;
@@ -81,6 +87,8 @@ const getTandaDurationFormatted = (tanda: PlanTrack[]) => {
   const durationSeconds = tanda.reduce((total, track) => total + (track?.getDurationSeconds() ?? 0), 0);
   return secondsToColinHuman(durationSeconds);
 };
+
+const isCumparsitaTanda = (tandaIndex: number) => tandaIndex === tandas.value.length - 1;
 
 const hasTrackDragData = (event: DragEvent) =>
   event.dataTransfer?.types.includes("application/json")
@@ -159,6 +167,11 @@ const handleDragLeave = (event: DragEvent) => {
 };
 
 const handleTandaDragStart = (event: DragEvent, tandaIndex: number) => {
+  if (isCumparsitaTanda(tandaIndex)) {
+    event.preventDefault();
+    return;
+  }
+
   draggedTandaIndex.value = tandaIndex;
 
   if (!event.dataTransfer) return;
@@ -168,6 +181,7 @@ const handleTandaDragStart = (event: DragEvent, tandaIndex: number) => {
 
 const handleTandaDragOver = (event: DragEvent, tandaIndex: number) => {
   if (draggedTandaIndex.value === null) return;
+  if (isCumparsitaTanda(draggedTandaIndex.value)) return;
 
   event.preventDefault();
   event.stopPropagation();
@@ -187,10 +201,17 @@ const handleTandaDrop = (event: DragEvent, targetTandaIndex: number) => {
   if (sourceTandaIndex === targetTandaIndex) return;
 
   const nextTandas = tandas.value.map((tanda) => [...tanda]);
+  const cumparsitaIndex = nextTandas.length - 1;
+  if (sourceTandaIndex === cumparsitaIndex) return;
+
   const [movedTanda] = nextTandas.splice(sourceTandaIndex, 1);
   if (!movedTanda) return;
 
-  nextTandas.splice(targetTandaIndex, 0, movedTanda);
+  let insertIndex = targetTandaIndex >= cumparsitaIndex ? cumparsitaIndex : targetTandaIndex;
+  if (sourceTandaIndex < insertIndex) insertIndex -= 1;
+  insertIndex = Math.max(0, Math.min(insertIndex, nextTandas.length - 1));
+
+  nextTandas.splice(insertIndex, 0, movedTanda);
   emit("tracksUpdated", nextTandas.flat());
 };
 
@@ -279,6 +300,7 @@ const isCortinaTimingInputAnimated = (
 ) => {
   const activeEffect = props.activeCortinaEffect;
   if (!activeEffect || activeEffect.cortinaIndex !== cortinaIndex) return false;
+  if (activeEffect.kind !== "silence") return false;
   return (key === "fadeInSeconds" && activeEffect.phase === "in")
     || (key === "fadeOutSeconds" && activeEffect.phase === "out");
 };
@@ -293,14 +315,11 @@ const getCortinaTimingInputStyle = (
   const activeEffect = props.activeCortinaEffect;
   if (!activeEffect || !isCortinaTimingInputAnimated(cortinaIndex, key)) return {};
 
-  if (activeEffect.kind === "silence") return {};
-
-  const fill = Math.max(0, Math.min(100, activeEffect.progress * 100));
-  const direction = activeEffect.phase === "in" ? "to top" : "to bottom";
-
-  return {
-    backgroundImage: `linear-gradient(${direction}, rgba(var(--primary), 0.55) 0%, rgba(var(--primary), 0.55) ${fill}%, transparent ${fill}%, transparent 100%)`,
-  };
+  const remainingSeconds = Math.max(1, Math.ceil(activeEffect.durationSeconds * (1 - activeEffect.progress)));
+  const fill = activeEffect.durationSeconds > 0
+    ? Math.max(0, Math.min(100, ((activeEffect.durationSeconds - remainingSeconds + 1) / activeEffect.durationSeconds) * 100))
+    : 100;
+  return { "--cortina-timing-progress": `${fill}%` };
 };
 const getCortinaTimingInputValue = (
   cortinaIndex: number,
@@ -310,7 +329,39 @@ const getCortinaTimingInputValue = (
   const activeEffect = props.activeCortinaEffect;
   if (!activeEffect || !isCortinaTimingInputSilence(cortinaIndex, key)) return value;
 
-  return Math.max(0, Math.ceil(activeEffect.durationSeconds * (1 - activeEffect.progress)) - 1);
+  return Math.max(1, Math.ceil(activeEffect.durationSeconds * (1 - activeEffect.progress)));
+};
+const isCortinaDurationAnimated = (cortinaIndex: number) =>
+  props.activeCortinaDuration?.cortinaIndex === cortinaIndex;
+const isCortinaDurationFading = (cortinaIndex: number) =>
+  props.activeCortinaEffect?.cortinaIndex === cortinaIndex && props.activeCortinaEffect.kind === "fade";
+const isCortinaDurationBlinking = (cortinaIndex: number) =>
+  isCortinaDurationAnimated(cortinaIndex);
+const getCortinaDurationStyle = (cortinaIndex: number) => {
+  if (!isCortinaDurationAnimated(cortinaIndex)) return {};
+
+  const fill = Math.max(0, Math.min(100, (props.activeCortinaDuration?.progress ?? 0) * 100));
+  const style: Record<string, string> = { "--cortina-duration-progress": `${fill}%` };
+  const activeEffect = props.activeCortinaEffect;
+
+  if (activeEffect?.cortinaIndex === cortinaIndex && activeEffect.kind === "fade") {
+    const effectFill = activeEffect.phase === "in"
+      ? activeEffect.progress * 100
+      : (1 - activeEffect.progress) * 100;
+    const fillPercent = Math.max(0, Math.min(100, effectFill));
+    style.backgroundImage = `linear-gradient(to top, rgba(var(--primary), 0.55) 0%, rgba(var(--primary), 0.55) ${fillPercent}%, transparent ${fillPercent}%, transparent 100%)`;
+  }
+  else {
+    style.backgroundColor = "rgba(var(--primary), 0.42)";
+  }
+
+  return style;
+};
+const getCortinaDurationInputValue = (cortinaIndex: number, value: number) => {
+  const activeDuration = props.activeCortinaDuration;
+  if (!activeDuration || activeDuration.cortinaIndex !== cortinaIndex) return value;
+
+  return Math.max(1, Math.ceil(activeDuration.durationSeconds * (1 - activeDuration.progress)));
 };
 
 const setManualCortinaTiming = (
@@ -349,6 +400,8 @@ const removeTandaTrack = (tandaIndex: number, position: number) => {
 };
 
 const removeTanda = (tandaIndex: number) => {
+  if (isCumparsitaTanda(tandaIndex)) return;
+
   const nextTracks = [...props.tracks];
   nextTracks.splice(tandaIndex * 4, 4);
 
@@ -382,7 +435,16 @@ const handleDragStart = (event: DragEvent, track: Track) => {
 };
 
 const addNewTanda = () => {
-  const nextTracks = [...props.tracks, null, null, null, null];
+  const currentTandas = tandas.value.map((tanda) => [...tanda]);
+  const cumparsitaTanda = currentTandas.pop() ?? [null, null, null, null];
+  const nextTracks = [
+    ...currentTandas.flat(),
+    null,
+    null,
+    null,
+    null,
+    ...cumparsitaTanda,
+  ];
   const nextTandaCount = Math.ceil(nextTracks.length / 4);
   const nextCortinaSlots = [...cortinaSlots.value];
 
@@ -416,14 +478,20 @@ const addNewTanda = () => {
             <button
               class="tanda-drag-handle"
               title="Move tanda"
-              draggable="true"
+              :draggable="!isCumparsitaTanda(tandaIndex)"
+              :disabled="isCumparsitaTanda(tandaIndex)"
               @dragstart="handleTandaDragStart($event, tandaIndex)"
               @dragend="clearTandaDrag"
             >
               =
             </button>
             <div class="tanda-title">
-              Tanda {{ tandaIndex + 1 }}
+              <template v-if="isCumparsitaTanda(tandaIndex)">
+                {{ $t("milonga.plan.cumparsita_title") }}
+              </template>
+              <template v-else>
+                Tanda {{ tandaIndex + 1 }}
+              </template>
             </div>
           </div>
           <div class="tanda-heading-actions">
@@ -434,6 +502,7 @@ const addNewTanda = () => {
               class="tanda-remove"
               title="Remove tanda"
               type="button"
+              :disabled="isCumparsitaTanda(tandaIndex)"
               @click="removeTanda(tandaIndex)"
             >
               <icon icon="ic:twotone-delete" class="w-5 h-5" />
@@ -587,32 +656,19 @@ const addNewTanda = () => {
                 v-if="cortinaSlots[tandaIndex].mode === 'manual'"
                 class="cortina-fade-controls"
               >
-                <label>
-                  <span>Dur</span>
-                  <input
-                    :value="cortinaSlots[tandaIndex].durationSeconds ?? defaultCortinaDurationSeconds"
-                    class="is-duration"
-                    :class="{ 'is-overridden': cortinaSlots[tandaIndex].durationSeconds !== undefined }"
-                    type="number"
-                    min="5"
-                    max="600"
-                    step="5"
-                    @change="handleManualCortinaTimingChange($event, tandaIndex, 'durationSeconds')"
-                  >
-                </label>
                 <label
+                  class="timing-control"
                   :class="{
-                    'is-fading': isCortinaTimingInputAnimated(tandaIndex, 'fadeInSeconds'),
-                    'is-silence': isCortinaTimingInputSilence(tandaIndex, 'fadeInSeconds'),
+                    'is-timing-progress': isCortinaTimingInputSilence(tandaIndex, 'fadeInSeconds'),
                   }"
                   :style="getCortinaTimingInputStyle(tandaIndex, 'fadeInSeconds')"
                 >
                   <span>In</span>
                   <input
+                    :key="`in-${tandaIndex}-${getCortinaTimingInputValue(tandaIndex, 'fadeInSeconds', cortinaSlots[tandaIndex].fadeInSeconds ?? defaultCortinaFadeInSeconds)}`"
                     :value="getCortinaTimingInputValue(tandaIndex, 'fadeInSeconds', cortinaSlots[tandaIndex].fadeInSeconds ?? defaultCortinaFadeInSeconds)"
                     :class="{
                       'is-overridden': cortinaSlots[tandaIndex].fadeInSeconds !== undefined,
-                      'is-fade-in': isCortinaTimingInputAnimated(tandaIndex, 'fadeInSeconds'),
                       'is-silence': isCortinaTimingInputSilence(tandaIndex, 'fadeInSeconds'),
                     }"
                     :style="getCortinaTimingInputStyle(tandaIndex, 'fadeInSeconds')"
@@ -624,18 +680,42 @@ const addNewTanda = () => {
                   >
                 </label>
                 <label
+                  class="duration-control"
                   :class="{
-                    'is-fading': isCortinaTimingInputAnimated(tandaIndex, 'fadeOutSeconds'),
-                    'is-silence': isCortinaTimingInputSilence(tandaIndex, 'fadeOutSeconds'),
+                    'is-duration-progress': isCortinaDurationAnimated(tandaIndex),
+                    'is-duration-fading': isCortinaDurationFading(tandaIndex),
+                  }"
+                  :style="getCortinaDurationStyle(tandaIndex)"
+                >
+                  <span>Dur</span>
+                  <input
+                    :key="`dur-${tandaIndex}-${getCortinaDurationInputValue(tandaIndex, cortinaSlots[tandaIndex].durationSeconds ?? defaultCortinaDurationSeconds)}`"
+                    :value="getCortinaDurationInputValue(tandaIndex, cortinaSlots[tandaIndex].durationSeconds ?? defaultCortinaDurationSeconds)"
+                    class="is-duration"
+                    :class="{
+                      'is-overridden': cortinaSlots[tandaIndex].durationSeconds !== undefined,
+                      'is-silence': isCortinaDurationBlinking(tandaIndex),
+                    }"
+                    type="number"
+                    min="5"
+                    max="600"
+                    step="5"
+                    @change="handleManualCortinaTimingChange($event, tandaIndex, 'durationSeconds')"
+                  >
+                </label>
+                <label
+                  class="timing-control"
+                  :class="{
+                    'is-timing-progress': isCortinaTimingInputSilence(tandaIndex, 'fadeOutSeconds'),
                   }"
                   :style="getCortinaTimingInputStyle(tandaIndex, 'fadeOutSeconds')"
                 >
                   <span>Out</span>
                   <input
+                    :key="`out-${tandaIndex}-${getCortinaTimingInputValue(tandaIndex, 'fadeOutSeconds', cortinaSlots[tandaIndex].fadeOutSeconds ?? defaultCortinaFadeOutSeconds)}`"
                     :value="getCortinaTimingInputValue(tandaIndex, 'fadeOutSeconds', cortinaSlots[tandaIndex].fadeOutSeconds ?? defaultCortinaFadeOutSeconds)"
                     :class="{
                       'is-overridden': cortinaSlots[tandaIndex].fadeOutSeconds !== undefined,
-                      'is-fade-out': isCortinaTimingInputAnimated(tandaIndex, 'fadeOutSeconds'),
                       'is-silence': isCortinaTimingInputSilence(tandaIndex, 'fadeOutSeconds'),
                     }"
                     :style="getCortinaTimingInputStyle(tandaIndex, 'fadeOutSeconds')"
@@ -727,7 +807,7 @@ const addNewTanda = () => {
         @click="addNewTanda"
       >
         <icon icon="ic:outline-add" class="w-8 h-8 text-text-subtitle" />
-        <span class="text-text-subtitle ml-2">Add tanda</span>
+        <span class="text-text-subtitle ml-2">{{ $t("milonga.plan.add_tanda_before_cumparsita") }}</span>
       </button>
     </section>
   </div>
@@ -762,8 +842,16 @@ const addNewTanda = () => {
   @apply w-6 h-6 flex items-center justify-center rounded text-text-subtitle cursor-grab hover:bg-surface-700 hover:text-text-title;
 }
 
+.tanda-drag-handle:disabled {
+  @apply cursor-default opacity-30 hover:bg-transparent hover:text-text-subtitle;
+}
+
 .tanda-remove {
   @apply w-8 h-8 flex items-center justify-center rounded bg-surface-700 text-text-subtitle hover:text-text-title;
+}
+
+.tanda-remove:disabled {
+  @apply opacity-30 hover:text-text-subtitle;
 }
 
 .tanda-title {
@@ -900,6 +988,43 @@ const addNewTanda = () => {
   @apply flex items-center gap-1 rounded bg-surface-700 px-1.5 py-1 text-xs text-text-subtitle;
 }
 
+.cortina-fade-controls label.duration-control {
+  @apply relative overflow-hidden;
+}
+
+.cortina-fade-controls label.duration-control > * {
+  @apply relative z-10;
+}
+
+.cortina-fade-controls label.timing-control {
+  @apply relative overflow-hidden;
+}
+
+.cortina-fade-controls label.timing-control.is-timing-progress {
+  @apply text-text-title ring-1 ring-primary/40;
+}
+
+.cortina-fade-controls label.timing-control.is-timing-progress::before {
+  @apply absolute top-0 left-0 h-0.5 bg-primary;
+  width: var(--cortina-timing-progress, 0%);
+  content: "";
+}
+
+.cortina-fade-controls label.duration-control.is-duration-progress {
+  @apply text-text-title ring-1 ring-primary/40;
+}
+
+.cortina-fade-controls label.duration-control.is-duration-fading {
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+}
+
+.cortina-fade-controls label.duration-control.is-duration-progress::before {
+  @apply absolute top-0 left-0 h-0.5 bg-primary;
+  width: var(--cortina-duration-progress, 0%);
+  content: "";
+}
+
 .cortina-fade-controls label.is-fading {
   @apply text-text-title ring-1 ring-primary/60;
   background-repeat: no-repeat;
@@ -915,7 +1040,7 @@ const addNewTanda = () => {
 }
 
 .cortina-fade-controls input.is-duration {
-  @apply w-16;
+  @apply w-16 bg-surface-900;
 }
 
 .cortina-fade-controls input.is-overridden {
@@ -923,20 +1048,21 @@ const addNewTanda = () => {
 }
 
 .cortina-fade-controls input.is-fade-in,
-.cortina-fade-controls input.is-fade-out {
+.cortina-fade-controls input.is-fade-out,
+.cortina-fade-controls input.is-duration-fading {
   background-repeat: no-repeat;
   background-size: 100% 100%;
   box-shadow: inset 0 0 0 1px rgba(var(--primary), 0.5);
 }
 
 .cortina-fade-controls input.is-silence {
-  animation: cortina-silence-flash 1s steps(2, jump-none) infinite;
+  animation: cortina-silence-flash 1s steps(2, jump-none) 1;
 }
 
 @keyframes cortina-silence-flash {
   0%,
   45% {
-    background-color: rgba(var(--primary), 0.28);
+    background-color: color-mix(in srgb, rgb(var(--primary)) 28%, rgb(var(--surface-900)));
   }
 
   55%,

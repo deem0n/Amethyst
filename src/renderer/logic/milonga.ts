@@ -72,7 +72,7 @@ export const createMilongaPlanDocument = (
   return {
     id: `milonga-plan-${timestamp}-${Math.random().toString(36).slice(2, 8)}`,
     name: normalizedName,
-    tracks: [],
+    tracks: [null, null, null, null],
     cortinaSlots: [],
     cortinaDurationSeconds,
     cortinaFadeInSeconds,
